@@ -1,0 +1,17 @@
+# Semgrep Configuration for Tenebra
+
+# Paths to exclude from scanning
+paths:
+  exclude:
+    - "*.test.ts"
+    - "*.spec.ts"
+    - "node_modules/"
+    - "dist/"
+    - "coverage/"
+    - ".git/"
+    - "*.min.js"
+
+# Rules configuration
+rules:
+  # Disable specific rules if they produce false positives
+  # Example: - id: rule-id-to-disable
