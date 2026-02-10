@@ -3,13 +3,22 @@
   "version": "1.0.0",
   "description": "Self-hosted End-to-End Encrypted chat server",
   "main": "dist/index.js",
+  "engines": {
+    "node": ">=20.17"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "migrate": "knex migrate:latest --knexfile src/database/knexfile.ts",
     "migrate:rollback": "knex migrate:rollback --knexfile src/database/knexfile.ts",
-    "seed": "knex seed:run --knexfile src/database/knexfile.ts"
+    "seed": "knex seed:run --knexfile src/database/knexfile.ts",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "format": "prettier --write \"src/**/*.ts\" \"scripts/**/*.js\" \"*.json\" \"*.md\"",
+    "security:scan": "semgrep scan --config=p/security-audit --config=p/secrets --config=p/owasp-top-ten --config=p/nodejs --error",
+    "security:scan:quiet": "semgrep scan --config=p/security-audit --config=p/secrets --config=p/owasp-top-ten --config=p/nodejs --quiet",
+    "prepare": "husky install"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -27,6 +36,12 @@
     "@types/express": "^4.17.21",
     "@types/node": "^20.10.0",
     "@types/uuid": "^9.0.7",
+    "@typescript-eslint/eslint-plugin": "^8.54.0",
+    "@typescript-eslint/parser": "^8.54.0",
+    "eslint": "^9.39.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "prettier": "^3.3.3",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.3.2"

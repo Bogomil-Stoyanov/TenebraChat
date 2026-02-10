@@ -1,0 +1,30 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+echo "🔍 Running ESLint..."
+npm run lint
+
+echo ""
+echo "🔍 Running lint-staged..."
+npx lint-staged
+
+echo ""
+echo "Running Semgrep security checks..."
+if command -v semgrep >/dev/null 2>&1; then
+  semgrep scan \
+    --config=p/security-audit \
+    --config=p/secrets \
+    --config=p/owasp-top-ten \
+    --config=p/nodejs \
+    --error \
+    --quiet \
+    || {
+      echo "❌ Semgrep found security issues!"
+      echo "To skip this check (not recommended): git commit --no-verify"
+      exit 1
+    }
+  echo "✅ Semgrep checks passed!"
+else
+  echo "⚠️  Semgrep not installed. Install with: pip install semgrep"
+  echo "   Skipping Semgrep checks..."
+fi
