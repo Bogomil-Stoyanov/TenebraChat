@@ -3,13 +3,13 @@
 # Paths to exclude from scanning
 paths:
   exclude:
-    - "*.test.ts"
-    - "*.spec.ts"
-    - "node_modules/"
-    - "dist/"
-    - "coverage/"
-    - ".git/"
-    - "*.min.js"
+    - '*.test.ts'
+    - '*.spec.ts'
+    - 'node_modules/'
+    - 'dist/'
+    - 'coverage/'
+    - '.git/'
+    - '*.min.js'
 
 # Rules configuration
 rules:
