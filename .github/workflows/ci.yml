@@ -31,7 +31,14 @@ jobs:
         run: npm run lint
 
       - name: Check formatting
-        run: npx prettier --check "src/**/*.ts" "scripts/**/*.js" "*.json" "*.md"
+        run: |
+          shopt -s globstar nullglob
+          files=(src/**/*.ts scripts/**/*.js *.json **/*.md)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No files to format"
+          else
+            npx prettier --check "${files[@]}"
+          fi
 
   build:
     name: Build & Audit
