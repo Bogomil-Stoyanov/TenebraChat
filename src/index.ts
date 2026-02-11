@@ -9,6 +9,8 @@ import keyRoutes from './routes/keys';
 import messageRoutes from './routes/messages';
 import fileRoutes from './routes/files';
 import authRoutes from './routes/auth';
+import { authenticate } from './middleware/auth';
+import { AuthChallenge } from './models';
 
 const app: Application = express();
 
@@ -28,9 +30,9 @@ app.get('/health', (req: Request, res: Response) => {
 
 app.use('/api/users', userRoutes);
 app.use('/api/auth', authRoutes);
-app.use('/api/keys', keyRoutes);
-app.use('/api/messages', messageRoutes);
-app.use('/api/files', fileRoutes);
+app.use('/api/keys', authenticate, keyRoutes);
+app.use('/api/messages', authenticate, messageRoutes);
+app.use('/api/files', authenticate, fileRoutes);
 
 app.use((req: Request, res: Response) => {
   res.status(404).json({
@@ -58,6 +60,16 @@ async function startServer() {
     }
 
     app.listen(config.server.port, () => {
+      // Periodically clean up expired auth challenges (every 5 minutes)
+      setInterval(
+        () => {
+          AuthChallenge.cleanupExpired().catch((err) => {
+            console.error('Failed to clean up expired auth challenges:', err);
+          });
+        },
+        5 * 60 * 1000
+      );
+
       console.log(`
 ╔════════════════════════════════════════════════════════════╗
 ║                                                            ║

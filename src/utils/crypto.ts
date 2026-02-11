@@ -24,17 +24,25 @@ export function verifySignature(
     const message = new TextEncoder().encode(data);
 
     return nacl.sign.detached.verify(message, signature, publicKey);
-  } catch {
-    return false;
+  } catch (error) {
+    // Treat common input-related errors as verification failures
+    if (error instanceof Error && (error.name === 'TypeError' || error.name === 'RangeError')) {
+      return false;
+    }
+    // Log and rethrow truly unexpected errors
+    console.error('verifySignature: unexpected error during signature verification', error);
+    throw error;
   }
 }
 
 /**
  * Generate a cryptographically secure random nonce.
  *
- * @param bytes - Number of random bytes (default 32)
- * @returns Hex-encoded nonce string
+ * Always produces a 32-byte (64-character hex) nonce that fits the
+ * auth_challenges.nonce VARCHAR(64) column.
+ *
+ * @returns Hex-encoded nonce string (64 characters)
  */
-export function generateNonce(bytes = 32): string {
-  return crypto.randomBytes(bytes).toString('hex');
+export function generateNonce(): string {
+  return crypto.randomBytes(32).toString('hex');
 }

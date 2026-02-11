@@ -80,7 +80,7 @@ export interface Device {
 }
 
 // Auth Challenge types
-export interface AuthChallengeType {
+export interface AuthChallengeData {
   id: string;
   user_id: string;
   nonce: string;

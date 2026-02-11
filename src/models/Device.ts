@@ -53,17 +53,19 @@ export class Device extends BaseModel {
     registrationId: number,
     fcmToken?: string
   ): Promise<Device> {
-    // Delete all other devices for this user (single session enforcement)
-    await this.query().where({ user_id: userId }).delete();
+    return Device.transaction(async (trx) => {
+      // Delete all other devices for this user (single session enforcement)
+      await this.query(trx).where({ user_id: userId }).delete();
 
-    // Insert the new/current device
-    return this.query().insertAndFetch({
-      user_id: userId,
-      device_id: deviceId,
-      identity_public_key: identityPublicKey,
-      registration_id: registrationId,
-      fcm_token: fcmToken || null,
-      last_seen_at: new Date(),
+      // Insert the new/current device
+      return this.query(trx).insertAndFetch({
+        user_id: userId,
+        device_id: deviceId,
+        identity_public_key: identityPublicKey,
+        registration_id: registrationId,
+        fcm_token: fcmToken || null,
+        last_seen_at: new Date(),
+      });
     });
   }
 

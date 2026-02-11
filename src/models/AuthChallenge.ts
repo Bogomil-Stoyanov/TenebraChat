@@ -39,15 +39,17 @@ export class AuthChallenge extends BaseModel {
     nonce: string,
     expiresInMs = 2 * 60 * 1000
   ): Promise<AuthChallenge> {
-    // Delete any existing challenges for this user
-    await this.query().where({ user_id: userId }).delete();
+    return AuthChallenge.transaction(async (trx) => {
+      // Delete any existing challenges for this user within the same transaction
+      await this.query(trx).where({ user_id: userId }).delete();
 
-    const expiresAt = new Date(Date.now() + expiresInMs);
+      const expiresAt = new Date(Date.now() + expiresInMs);
 
-    return this.query().insertAndFetch({
-      user_id: userId,
-      nonce,
-      expires_at: expiresAt,
+      return this.query(trx).insertAndFetch({
+        user_id: userId,
+        nonce,
+        expires_at: expiresAt,
+      });
     });
   }
 

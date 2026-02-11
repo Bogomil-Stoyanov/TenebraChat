@@ -33,7 +33,7 @@ export async function authenticate(
     if (typeof authHeader !== 'string' || !authHeader.startsWith('Bearer ')) {
       const response: ApiResponse = {
         success: false,
-        error: 'Missing or invalid Authorization header',
+        error: 'Authentication failed',
       };
       res.status(401).json(response);
       return;
@@ -44,7 +44,7 @@ export async function authenticate(
     if (token.length === 0) {
       const response: ApiResponse = {
         success: false,
-        error: 'Missing or invalid Authorization header',
+        error: 'Authentication failed',
       };
       res.status(401).json(response);
       return;
@@ -52,11 +52,28 @@ export async function authenticate(
 
     let payload: JwtPayload;
     try {
-      payload = jwt.verify(token, config.jwt.secret) as JwtPayload;
+      const decoded = jwt.verify(token, config.jwt.secret);
+
+      // Runtime validation of JWT payload structure
+      if (
+        typeof decoded !== 'object' ||
+        decoded === null ||
+        typeof (decoded as JwtPayload).userId !== 'string' ||
+        typeof (decoded as JwtPayload).deviceId !== 'string'
+      ) {
+        const response: ApiResponse = {
+          success: false,
+          error: 'Authentication failed',
+        };
+        res.status(401).json(response);
+        return;
+      }
+
+      payload = decoded as JwtPayload;
     } catch {
       const response: ApiResponse = {
         success: false,
-        error: 'Invalid or expired token',
+        error: 'Authentication failed',
       };
       res.status(401).json(response);
       return;
@@ -68,14 +85,16 @@ export async function authenticate(
     if (!device) {
       const response: ApiResponse = {
         success: false,
-        error: 'Session invalidated — logged in from another device',
+        error: 'Authentication failed',
       };
       res.status(401).json(response);
       return;
     }
 
-    // Update last_seen_at
-    await Device.updateLastSeen(device.id);
+    // Update last_seen_at (fire-and-forget — should not block authenticated requests)
+    Device.updateLastSeen(device.id).catch((updateError) => {
+      console.error('Failed to update device last_seen_at:', updateError);
+    });
 
     req.user = payload;
     next();
