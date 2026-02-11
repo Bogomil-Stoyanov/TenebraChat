@@ -16,7 +16,12 @@ export async function generateChallenge(req: Request, res: Response): Promise<vo
   try {
     const { username, deviceId } = req.body;
 
-    if (!username || !deviceId) {
+    if (
+      typeof username !== 'string' ||
+      typeof deviceId !== 'string' ||
+      username.trim().length === 0 ||
+      deviceId.trim().length === 0
+    ) {
       const response: ApiResponse = {
         success: false,
         error: 'Missing required fields: username, deviceId',
@@ -25,7 +30,8 @@ export async function generateChallenge(req: Request, res: Response): Promise<vo
       return;
     }
 
-    const user = await User.findByUsername(username);
+    const sanitizedUsername = username.trim();
+    const user = await User.findByUsername(sanitizedUsername);
     if (!user) {
       const response: ApiResponse = {
         success: false,
@@ -63,7 +69,14 @@ export async function verifyChallenge(req: Request, res: Response): Promise<void
   try {
     const { username, signature, deviceId, fcmToken } = req.body;
 
-    if (!username || !signature || !deviceId) {
+    if (
+      typeof username !== 'string' ||
+      typeof signature !== 'string' ||
+      typeof deviceId !== 'string' ||
+      username.trim().length === 0 ||
+      signature.trim().length === 0 ||
+      deviceId.trim().length === 0
+    ) {
       const response: ApiResponse = {
         success: false,
         error: 'Missing required fields: username, signature, deviceId',
@@ -72,8 +85,19 @@ export async function verifyChallenge(req: Request, res: Response): Promise<void
       return;
     }
 
+    if (fcmToken !== undefined && typeof fcmToken !== 'string') {
+      const response: ApiResponse = {
+        success: false,
+        error: 'fcmToken must be a string',
+      };
+      res.status(400).json(response);
+      return;
+    }
+
+    const sanitizedUsername = username.trim();
+
     // Find the user
-    const user = await User.findByUsername(username);
+    const user = await User.findByUsername(sanitizedUsername);
     if (!user) {
       const response: ApiResponse = {
         success: false,

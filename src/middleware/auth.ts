@@ -30,7 +30,7 @@ export async function authenticate(
   try {
     const authHeader = req.headers.authorization;
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (typeof authHeader !== 'string' || !authHeader.startsWith('Bearer ')) {
       const response: ApiResponse = {
         success: false,
         error: 'Missing or invalid Authorization header',
@@ -40,6 +40,15 @@ export async function authenticate(
     }
 
     const token = authHeader.substring(7);
+
+    if (token.length === 0) {
+      const response: ApiResponse = {
+        success: false,
+        error: 'Missing or invalid Authorization header',
+      };
+      res.status(401).json(response);
+      return;
+    }
 
     let payload: JwtPayload;
     try {
