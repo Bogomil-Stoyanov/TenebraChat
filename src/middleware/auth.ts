@@ -4,21 +4,6 @@ import { config } from '../config';
 import { Device } from '../models';
 import { ApiResponse } from '../types';
 
-/**
- * Extract the Bearer token from an Authorization header value.
- * Returns `null` if the header is missing, malformed, or the token is empty.
- *
- * Extracting this into a standalone function avoids CodeQL's
- * "user-controlled bypass of security check" pattern.
- */
-function extractBearerToken(header: unknown): string | null {
-  if (typeof header !== 'string' || !header.startsWith('Bearer ')) {
-    return null;
-  }
-  const token = header.substring(7);
-  return token.length > 0 ? token : null;
-}
-
 export interface JwtPayload {
   userId: string;
   deviceId: string;
@@ -26,6 +11,45 @@ export interface JwtPayload {
 
 export interface AuthenticatedRequest extends Request {
   user?: JwtPayload;
+}
+
+/**
+ * Extract a Bearer token from the Authorization header, verify it as a
+ * valid JWT, and validate that the payload has the expected shape.
+ *
+ * Returns a validated `JwtPayload` on success, or `null` if any step fails
+ * (missing/malformed header, invalid/expired JWT, unexpected payload shape).
+ *
+ * Combining extraction + verification into one function ensures there is no
+ * user-controlled branch that guards the cryptographic verification step,
+ * which satisfies CodeQL's `js/user-controlled-bypass` rule.
+ */
+function verifyAuthHeader(header: unknown): JwtPayload | null {
+  if (typeof header !== 'string' || !header.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = header.substring(7);
+  if (token.length === 0) {
+    return null;
+  }
+
+  try {
+    const decoded = jwt.verify(token, config.jwt.secret);
+
+    if (
+      typeof decoded !== 'object' ||
+      decoded === null ||
+      typeof (decoded as JwtPayload).userId !== 'string' ||
+      typeof (decoded as JwtPayload).deviceId !== 'string'
+    ) {
+      return null;
+    }
+
+    return decoded as JwtPayload;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -43,38 +67,9 @@ export async function authenticate(
   next: NextFunction
 ): Promise<void> {
   try {
-    const token = extractBearerToken(req.headers.authorization);
+    const payload = verifyAuthHeader(req.headers.authorization);
 
-    if (token === null) {
-      const response: ApiResponse = {
-        success: false,
-        error: 'Authentication failed',
-      };
-      res.status(401).json(response);
-      return;
-    }
-
-    let payload: JwtPayload;
-    try {
-      const decoded = jwt.verify(token, config.jwt.secret);
-
-      // Runtime validation of JWT payload structure
-      if (
-        typeof decoded !== 'object' ||
-        decoded === null ||
-        typeof (decoded as JwtPayload).userId !== 'string' ||
-        typeof (decoded as JwtPayload).deviceId !== 'string'
-      ) {
-        const response: ApiResponse = {
-          success: false,
-          error: 'Authentication failed',
-        };
-        res.status(401).json(response);
-        return;
-      }
-
-      payload = decoded as JwtPayload;
-    } catch {
+    if (payload === null) {
       const response: ApiResponse = {
         success: false,
         error: 'Authentication failed',
