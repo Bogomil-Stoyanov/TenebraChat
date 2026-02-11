@@ -8,6 +8,7 @@ import userRoutes from './routes/users';
 import keyRoutes from './routes/keys';
 import messageRoutes from './routes/messages';
 import fileRoutes from './routes/files';
+import authRoutes from './routes/auth';
 
 const app: Application = express();
 
@@ -26,6 +27,7 @@ app.get('/health', (req: Request, res: Response) => {
 });
 
 app.use('/api/users', userRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/keys', keyRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/files', fileRoutes);
@@ -67,6 +69,9 @@ async function startServer() {
 ║   Endpoints:                                               ║
 ║   • GET  /health              - Health check               ║
 ║   • POST /api/users/register  - Register user              ║
+║   • POST /api/auth/challenge  - Auth challenge              ║
+║   • POST /api/auth/verify     - Verify & get JWT            ║
+║   • POST /api/auth/logout     - Logout                      ║
 ║   • POST /api/keys/*          - Key management             ║
 ║   • POST /api/messages/*      - Message queue              ║
 ║   • POST /api/files/*         - File storage               ║

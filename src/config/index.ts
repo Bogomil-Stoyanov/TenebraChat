@@ -22,4 +22,8 @@ export const config = {
     bucket: process.env.MINIO_BUCKET || 'tenebra-files',
     useSSL: process.env.MINIO_USE_SSL === 'true',
   },
+  jwt: {
+    secret: process.env.JWT_SECRET || 'change-this-to-a-secure-random-string',
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  },
 };

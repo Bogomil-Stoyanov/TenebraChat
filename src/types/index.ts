@@ -70,11 +70,21 @@ export interface CreateQueuedMessageDTO {
 export interface Device {
   id: string;
   user_id: string;
-  device_id: number;
+  device_id: string;
   identity_public_key: string;
   registration_id: number;
   device_name?: string;
+  fcm_token?: string;
   last_seen_at: Date;
+  created_at: Date;
+}
+
+// Auth Challenge types
+export interface AuthChallengeType {
+  id: string;
+  user_id: string;
+  nonce: string;
+  expires_at: Date;
   created_at: Date;
 }
 
