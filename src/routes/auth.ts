@@ -23,6 +23,15 @@ const verifyLimiter = rateLimit({
   message: { success: false, error: 'Too many verification attempts, please try again later.' },
 });
 
+// Rate limiter for logout: 10 per minute per IP
+const logoutLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many logout requests, please try again later.' },
+});
+
 // POST /api/auth/challenge - Request a login challenge (nonce)
 router.post('/challenge', challengeLimiter, generateChallenge);
 
@@ -30,6 +39,6 @@ router.post('/challenge', challengeLimiter, generateChallenge);
 router.post('/verify', verifyLimiter, verifyChallenge);
 
 // POST /api/auth/logout - Invalidate current session
-router.post('/logout', authenticate, logout);
+router.post('/logout', logoutLimiter, authenticate, logout);
 
 export default router;
