@@ -1,6 +1,7 @@
 import express, { Application, Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import { config } from './config';
 import { minioService } from './services/MinioService';
 import './database/connection';
@@ -13,6 +14,24 @@ import { authenticate } from './middleware/auth';
 import { AuthChallenge } from './models';
 
 const app: Application = express();
+
+// Rate limiter for authenticated API routes
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests, please try again later.' },
+});
+
+// Stricter rate limiter for file operations
+const fileLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many file requests, please try again later.' },
+});
 
 app.use(helmet());
 app.use(cors());
@@ -30,9 +49,9 @@ app.get('/health', (req: Request, res: Response) => {
 
 app.use('/api/users', userRoutes);
 app.use('/api/auth', authRoutes);
-app.use('/api/keys', authenticate, keyRoutes);
-app.use('/api/messages', authenticate, messageRoutes);
-app.use('/api/files', authenticate, fileRoutes);
+app.use('/api/keys', apiLimiter, authenticate, keyRoutes);
+app.use('/api/messages', apiLimiter, authenticate, messageRoutes);
+app.use('/api/files', fileLimiter, authenticate, fileRoutes);
 
 app.use((req: Request, res: Response) => {
   res.status(404).json({

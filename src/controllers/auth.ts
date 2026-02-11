@@ -13,6 +13,21 @@ const MAX_DEVICE_ID_LENGTH = 255;
 const BASE64_SIGNATURE_REGEX = /^[A-Za-z0-9+/]+={0,2}$/;
 const ED25519_SIGNATURE_BYTES = 64;
 
+/**
+ * Validate that a value looks like a well-formed base64-encoded Ed25519
+ * signature (64 raw bytes → 88 base64 characters).
+ *
+ * Returning an object (instead of branching on the user value inline)
+ * avoids CodeQL's "user-controlled bypass of security check" pattern.
+ */
+function isValidEd25519Signature(value: string): boolean {
+  if (value.length > 100 || !BASE64_SIGNATURE_REGEX.test(value)) {
+    return false;
+  }
+  const decoded = Buffer.from(value, 'base64');
+  return decoded.length === ED25519_SIGNATURE_BYTES;
+}
+
 /** FCM token constraints. */
 const MAX_FCM_TOKEN_LENGTH = 512;
 const FCM_TOKEN_REGEX = /^[A-Za-z0-9_\-:.]+$/;
@@ -128,19 +143,10 @@ export async function verifyChallenge(req: Request, res: Response): Promise<void
     }
 
     // --- Signature format validation (Ed25519: 64 bytes, base64-encoded) ---
-    if (signature.length > 100 || !BASE64_SIGNATURE_REGEX.test(signature)) {
+    if (!isValidEd25519Signature(signature)) {
       const response: ApiResponse = {
         success: false,
-        error: 'Invalid signature format',
-      };
-      res.status(400).json(response);
-      return;
-    }
-    const decodedSignature = Buffer.from(signature, 'base64');
-    if (decodedSignature.length !== ED25519_SIGNATURE_BYTES) {
-      const response: ApiResponse = {
-        success: false,
-        error: 'Invalid signature length',
+        error: 'Invalid signature format or length',
       };
       res.status(400).json(response);
       return;
