@@ -22,4 +22,25 @@ export const config = {
     bucket: process.env.MINIO_BUCKET || 'tenebra-files',
     useSSL: process.env.MINIO_USE_SSL === 'true',
   },
+  jwt: {
+    secret: process.env.JWT_SECRET || 'change-this-to-a-secure-random-string',
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  },
 };
+
+// --- Startup validations ---
+
+if (config.jwt.secret === 'change-this-to-a-secure-random-string') {
+  if (config.server.nodeEnv === 'production') {
+    throw new Error('JWT_SECRET must be set in production — refusing to start with default value.');
+  }
+  console.warn('⚠️  WARNING: Using default JWT_SECRET — set JWT_SECRET env var before deploying.');
+}
+
+const VALID_JWT_EXPIRES_IN = /^\d+[smhd]$/;
+if (!VALID_JWT_EXPIRES_IN.test(config.jwt.expiresIn)) {
+  throw new Error(
+    `Invalid JWT_EXPIRES_IN value "${config.jwt.expiresIn}". ` +
+      'Expected a value like "7d", "24h", "3600s", or "30m".'
+  );
+}

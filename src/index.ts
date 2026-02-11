@@ -1,6 +1,7 @@
 import express, { Application, Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import { config } from './config';
 import { minioService } from './services/MinioService';
 import './database/connection';
@@ -8,8 +9,29 @@ import userRoutes from './routes/users';
 import keyRoutes from './routes/keys';
 import messageRoutes from './routes/messages';
 import fileRoutes from './routes/files';
+import authRoutes from './routes/auth';
+import { authenticate } from './middleware/auth';
+import { AuthChallenge } from './models';
 
 const app: Application = express();
+
+// Rate limiter for authenticated API routes
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests, please try again later.' },
+});
+
+// Stricter rate limiter for file operations
+const fileLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many file requests, please try again later.' },
+});
 
 app.use(helmet());
 app.use(cors());
@@ -26,9 +48,10 @@ app.get('/health', (req: Request, res: Response) => {
 });
 
 app.use('/api/users', userRoutes);
-app.use('/api/keys', keyRoutes);
-app.use('/api/messages', messageRoutes);
-app.use('/api/files', fileRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/keys', apiLimiter, authenticate, keyRoutes);
+app.use('/api/messages', apiLimiter, authenticate, messageRoutes);
+app.use('/api/files', fileLimiter, authenticate, fileRoutes);
 
 app.use((req: Request, res: Response) => {
   res.status(404).json({
@@ -56,6 +79,16 @@ async function startServer() {
     }
 
     app.listen(config.server.port, () => {
+      // Periodically clean up expired auth challenges (every 5 minutes)
+      setInterval(
+        () => {
+          AuthChallenge.cleanupExpired().catch((err) => {
+            console.error('Failed to clean up expired auth challenges:', err);
+          });
+        },
+        5 * 60 * 1000
+      );
+
       console.log(`
 ╔════════════════════════════════════════════════════════════╗
 ║                                                            ║
@@ -67,6 +100,9 @@ async function startServer() {
 ║   Endpoints:                                               ║
 ║   • GET  /health              - Health check               ║
 ║   • POST /api/users/register  - Register user              ║
+║   • POST /api/auth/challenge  - Auth challenge              ║
+║   • POST /api/auth/verify     - Verify & get JWT            ║
+║   • POST /api/auth/logout     - Logout                      ║
 ║   • POST /api/keys/*          - Key management             ║
 ║   • POST /api/messages/*      - Message queue              ║
 ║   • POST /api/files/*         - File storage               ║
