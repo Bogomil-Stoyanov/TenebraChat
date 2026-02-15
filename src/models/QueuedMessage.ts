@@ -56,19 +56,21 @@ export class QueuedMessage extends BaseModel {
   }
 
   static async fetchAndDelete(recipientId: string, limit: number = 100): Promise<QueuedMessage[]> {
-    // Get messages
-    const messages = await this.query()
-      .where({ recipient_id: recipientId })
-      .orderBy('created_at', 'asc')
-      .limit(limit);
+    return this.transaction(async (trx) => {
+      // Lock selected rows to prevent duplicate delivery
+      const messages = await this.query(trx)
+        .where({ recipient_id: recipientId })
+        .orderBy('created_at', 'asc')
+        .limit(limit)
+        .forUpdate();
 
-    if (messages.length === 0) return [];
+      if (messages.length === 0) return [];
 
-    // Delete fetched messages
-    const ids = messages.map((m) => m.id);
-    await this.query().whereIn('id', ids).delete();
+      const ids = messages.map((m) => m.id);
+      await this.query(trx).whereIn('id', ids).delete();
 
-    return messages;
+      return messages;
+    });
   }
 
   static async deleteByIds(ids: string[]): Promise<number> {
