@@ -1,5 +1,5 @@
 {
-  "name": "tenebra-chat",
+  "name": "tenebra-server",
   "version": "1.0.0",
   "description": "Self-hosted End-to-End Encrypted chat server",
   "main": "dist/index.js",
@@ -17,8 +17,7 @@
     "lint:fix": "eslint src --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\" \"scripts/**/*.js\" \"*.json\" \"*.md\"",
     "security:scan": "semgrep scan --config=p/security-audit --config=p/secrets --config=p/owasp-top-ten --config=p/nodejs --error",
-    "security:scan:quiet": "semgrep scan --config=p/security-audit --config=p/secrets --config=p/owasp-top-ten --config=p/nodejs --quiet",
-    "prepare": "husky install"
+    "security:scan:quiet": "semgrep scan --config=p/security-audit --config=p/secrets --config=p/owasp-top-ten --config=p/nodejs --quiet"
   },
   "dependencies": {
     "cors": "^2.8.5",

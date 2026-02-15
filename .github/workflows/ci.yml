@@ -22,15 +22,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20.x
-          cache: 'npm'
 
-      - name: Install dependencies
+      - name: Install server dependencies
+        working-directory: tenebra-server
         run: npm ci
 
-      - name: Run ESLint
+      - name: Run server ESLint
+        working-directory: tenebra-server
         run: npm run lint
 
-      - name: Check formatting
+      - name: Check server formatting
+        working-directory: tenebra-server
         run: |
           shopt -s globstar nullglob
           files=(src/**/*.ts scripts/**/*.js *.json **/*.md)
@@ -39,6 +41,14 @@ jobs:
           else
             npx prettier --check "${files[@]}"
           fi
+
+      - name: Install web dependencies
+        working-directory: tenebra-web
+        run: npm ci
+
+      - name: Run web ESLint
+        working-directory: tenebra-web
+        run: npm run lint
 
   build:
     name: Build & Audit
@@ -51,17 +61,27 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20.x
-          cache: 'npm'
 
-      - name: Install dependencies
+      - name: Install server dependencies
+        working-directory: tenebra-server
         run: npm ci
 
-      - name: Build TypeScript
+      - name: Build server TypeScript
+        working-directory: tenebra-server
         run: npm run build
 
-      - name: Run npm audit (Security)
+      - name: Run server npm audit
+        working-directory: tenebra-server
         run: npm audit --production --audit-level=moderate
         continue-on-error: true
+
+      - name: Install web dependencies
+        working-directory: tenebra-web
+        run: npm ci
+
+      - name: Build web client
+        working-directory: tenebra-web
+        run: npm run build
 
   semgrep:
     name: Semgrep SAST Scan
@@ -92,6 +112,14 @@ jobs:
 
       - name: Run Semgrep - Node.js Specific
         run: semgrep scan --config=p/nodejs --sarif --output=nodejs.sarif
+        continue-on-error: true
+
+      - name: Run Semgrep - React Specific
+        run: semgrep scan --config=p/react --sarif --output=react.sarif
+        continue-on-error: true
+
+      - name: Run Semgrep - TypeScript Specific
+        run: semgrep scan --config=p/typescript --sarif --output=typescript.sarif
         continue-on-error: true
 
       - name: Upload Security Audit Results
@@ -126,6 +154,22 @@ jobs:
           category: semgrep-nodejs
         continue-on-error: true
 
+      - name: Upload React Results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: react.sarif
+          category: semgrep-react
+        continue-on-error: true
+
+      - name: Upload TypeScript Results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: typescript.sarif
+          category: semgrep-typescript
+        continue-on-error: true
+
       - name: Run Semgrep with all rulesets (fail on error)
         run: |
           semgrep scan \
@@ -133,6 +177,8 @@ jobs:
             --config=p/secrets \
             --config=p/owasp-top-ten \
             --config=p/nodejs \
+            --config=p/react \
+            --config=p/typescript \
             --error \
             --verbose
 
@@ -198,7 +244,7 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ./tenebra-server
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
