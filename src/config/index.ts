@@ -26,6 +26,8 @@ export const config = {
     secret: process.env.JWT_SECRET || 'change-this-to-a-secure-random-string',
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   },
+  /** Threshold below which clients are told to upload more one-time pre-keys. */
+  lowKeyThreshold: parseInt(process.env.LOW_KEY_THRESHOLD || '20', 10),
 };
 
 // --- Startup validations ---

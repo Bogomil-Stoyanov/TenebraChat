@@ -24,6 +24,7 @@ services:
       MINIO_USE_SSL: 'false'
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      LOW_KEY_THRESHOLD: ${LOW_KEY_THRESHOLD:-20}
     ports:
       - '3000:3000'
     depends_on:
