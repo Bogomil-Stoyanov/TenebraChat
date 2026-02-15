@@ -1,4 +1,5 @@
 import express, { Application, Request, Response, NextFunction } from 'express';
+import { createServer } from 'http';
 import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
@@ -12,8 +13,10 @@ import fileRoutes from './routes/files';
 import authRoutes from './routes/auth';
 import { authenticate } from './middleware/auth';
 import { AuthChallenge } from './models';
+import { initSocket } from './socket';
 
 const app: Application = express();
+const httpServer = createServer(app);
 
 // Rate limiter for authenticated API routes
 const apiLimiter = rateLimit({
@@ -78,7 +81,10 @@ async function startServer() {
       console.warn('   Start MinIO with: docker-compose up -d minio');
     }
 
-    app.listen(config.server.port, () => {
+    // Initialise Socket.io on the shared HTTP server
+    initSocket(httpServer);
+
+    httpServer.listen(config.server.port, () => {
       // Periodically clean up expired auth challenges (every 5 minutes)
       setInterval(
         () => {
@@ -97,15 +103,20 @@ async function startServer() {
 ║   Server running on port ${config.server.port.toString().padEnd(30)}║
 ║   Environment: ${config.server.nodeEnv.padEnd(39)}║
 ║                                                            ║
-║   Endpoints:                                               ║
+║   HTTP Endpoints:                                          ║
 ║   • GET  /health              - Health check               ║
 ║   • POST /api/users/register  - Register user              ║
-║   • POST /api/auth/challenge  - Auth challenge              ║
-║   • POST /api/auth/verify     - Verify & get JWT            ║
-║   • POST /api/auth/logout     - Logout                      ║
+║   • POST /api/auth/challenge  - Auth challenge             ║
+║   • POST /api/auth/verify     - Verify & get JWT           ║
+║   • POST /api/auth/logout     - Logout                     ║
 ║   • POST /api/keys/*          - Key management             ║
-║   • POST /api/messages/*      - Message queue              ║
+║   • POST /api/messages/send   - Send message               ║
+║   • GET  /api/messages/offline - Fetch offline messages    ║
 ║   • POST /api/files/*         - File storage               ║
+║                                                            ║
+║   WebSocket:                                               ║
+║   • Socket.io (JWT auth via handshake)                     ║
+║   • Events: new_message                                    ║
 ║                                                            ║
 ╚════════════════════════════════════════════════════════════╝
       `);
@@ -118,4 +129,4 @@ async function startServer() {
 
 startServer();
 
-export default app;
+export { app, httpServer };

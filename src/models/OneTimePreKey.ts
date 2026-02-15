@@ -37,15 +37,21 @@ export class OneTimePreKey extends BaseModel {
   }
 
   static async consumeOne(userId: string): Promise<OneTimePreKey | undefined> {
-    // Get the oldest one-time pre-key
-    const key = await this.query().where({ user_id: userId }).orderBy('created_at', 'asc').first();
+    return OneTimePreKey.transaction(async (trx) => {
+      // Lock and fetch the oldest one-time pre-key for this user
+      const key = await this.query(trx)
+        .where({ user_id: userId })
+        .orderBy('created_at', 'asc')
+        .forUpdate()
+        .first();
 
-    if (!key) return undefined;
+      if (!key) return undefined;
 
-    // Delete it
-    await this.query().deleteById(key.id);
+      // Delete it within the same transaction
+      await this.query(trx).deleteById(key.id);
 
-    return key;
+      return key;
+    });
   }
 
   static async createBatch(
