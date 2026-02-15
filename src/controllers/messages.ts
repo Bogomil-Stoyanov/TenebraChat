@@ -10,6 +10,8 @@ const MAX_CIPHERTEXT_LENGTH = 65_536;
 /** Allowed message types for the Signal protocol. */
 const ALLOWED_MESSAGE_TYPES = new Set(['signal_message', 'pre_key_signal_message', 'key_exchange']);
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // ---------------------------------------------------------------------------
 // Input validation helpers
 // ---------------------------------------------------------------------------
@@ -38,6 +40,11 @@ function validateSendInput(body: Record<string, unknown>): SendMessageInput | st
 
   if (ciphertext.length > MAX_CIPHERTEXT_LENGTH) {
     return `ciphertext exceeds maximum length of ${MAX_CIPHERTEXT_LENGTH} characters`;
+  }
+
+  // Validate base64 encoding
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(ciphertext)) {
+    return 'ciphertext must be valid base64';
   }
 
   const messageType =
@@ -110,39 +117,46 @@ export async function sendMessage(req: AuthenticatedRequest, res: Response): Pro
     const online = findOnlineDeviceForUser(recipientId);
 
     if (online) {
-      // --- ONLINE: deliver in real-time via Socket.io ---
+      // --- ONLINE: deliver in real-time via Socket.io (with fallback to queue) ---
       const io = getIO();
-      io.to(online.socketId).emit('new_message', {
-        senderId,
-        ciphertext,
-        type,
-        timestamp: new Date().toISOString(),
-      });
+      const socket = io.sockets.sockets.get(online.socketId);
 
-      const response: ApiResponse<{ delivered: boolean }> = {
-        success: true,
-        data: { delivered: true },
-        message: 'Message delivered in real-time',
-      };
-      res.json(response);
-    } else {
-      // --- OFFLINE: persist to the message queue ---
-      const payloadBuffer = Buffer.from(ciphertext, 'base64');
+      if (socket && socket.connected) {
+        socket.emit('new_message', {
+          senderId,
+          ciphertext,
+          type,
+          timestamp: new Date().toISOString(),
+        });
 
-      const queued = await QueuedMessage.query().insertAndFetch({
-        recipient_id: recipientId,
-        sender_id: senderId,
-        encrypted_payload: payloadBuffer,
-        message_type: type,
-      });
+        const response: ApiResponse<{ delivered: boolean }> = {
+          success: true,
+          data: { delivered: true },
+          message: 'Message delivered in real-time',
+        };
+        res.json(response);
+        return;
+      }
 
-      const response: ApiResponse<{ delivered: boolean; messageId: string }> = {
-        success: true,
-        data: { delivered: false, messageId: queued.id },
-        message: 'Recipient offline — message queued',
-      };
-      res.status(201).json(response);
+      // Socket is stale — fall through to offline queueing
     }
+
+    // --- OFFLINE (or stale socket): persist to the message queue ---
+    const payloadBuffer = Buffer.from(ciphertext, 'base64');
+
+    const queued = await QueuedMessage.query().insertAndFetch({
+      recipient_id: recipientId,
+      sender_id: senderId,
+      encrypted_payload: payloadBuffer,
+      message_type: type,
+    });
+
+    const response: ApiResponse<{ delivered: boolean; messageId: string }> = {
+      success: true,
+      data: { delivered: false, messageId: queued.id },
+      message: 'Recipient offline — message queued',
+    };
+    res.status(201).json(response);
   } catch (error) {
     console.error('Error sending message:', error);
     res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
@@ -170,7 +184,7 @@ export async function fetchOfflineMessages(
       return;
     }
 
-    const limit = Math.min(Math.max(parseInt(req.query.limit as string, 10) || 100, 1), 500);
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string, 10) || 100, 1), 100);
 
     const messages = await QueuedMessage.fetchAndDelete(req.user.userId, limit);
 
@@ -215,6 +229,14 @@ export async function deleteMessages(req: AuthenticatedRequest, res: Response): 
       res.status(400).json({
         success: false,
         error: 'Missing required field: messageIds (array)',
+      } as ApiResponse);
+      return;
+    }
+
+    if (messageIds.some((id) => typeof id !== 'string' || !UUID_RE.test(id))) {
+      res.status(400).json({
+        success: false,
+        error: 'All messageIds must be valid UUIDs',
       } as ApiResponse);
       return;
     }
