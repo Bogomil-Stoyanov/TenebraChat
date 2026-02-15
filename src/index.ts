@@ -122,4 +122,29 @@ async function startServer() {
 
 startServer();
 
+// ---- Graceful shutdown ----
+function gracefulShutdown(signal: string): void {
+  console.log(`\n${signal} received — shutting down gracefully…`);
+  cleanupService.stop();
+
+  // Dynamically import to avoid circular issues if stopHeartbeat isn't needed at top level
+  import('./socket').then(({ stopHeartbeat }) => {
+    stopHeartbeat();
+  });
+
+  httpServer.close(() => {
+    console.log('HTTP server closed');
+    process.exit(0);
+  });
+
+  // Force exit after 10 s if connections haven't drained
+  setTimeout(() => {
+    console.error('Forced shutdown after timeout');
+    process.exit(1);
+  }, 10_000).unref();
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 export { app, httpServer };

@@ -29,6 +29,9 @@ let io: Server;
 /** Heartbeat interval: update `last_seen_at` every hour for long-lived sockets. */
 const HEARTBEAT_INTERVAL_MS = 60 * 60 * 1000;
 
+/** Handle returned by the shared heartbeat setInterval (if running). */
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -103,8 +106,9 @@ export function initSocket(httpServer: HttpServer): Server {
       return next(new Error('Session invalidated'));
     }
 
-    // Attach the validated payload to the socket for later use
+    // Attach the validated payload and device record id to the socket
     socket.data.user = payload;
+    socket.data.deviceDbId = device.id;
     next();
   });
 
@@ -127,31 +131,18 @@ export function initSocket(httpServer: HttpServer): Server {
     onlineClients.set(key, { userId: user.userId, deviceId: user.deviceId, socketId: socket.id });
     console.log(`Client connected: ${key} (socket ${socket.id})`);
 
-    // Update last_seen_at on connection (fire-and-forget)
-    Device.findByUserIdAndDeviceId(user.userId, user.deviceId)
-      .then((device) => {
-        if (device) return Device.updateLastSeen(device.id);
-      })
-      .catch((err) => {
+    // Update last_seen_at on connection using the cached device record id
+    const deviceDbId: string | undefined = socket.data.deviceDbId;
+    if (deviceDbId) {
+      Device.updateLastSeen(deviceDbId).catch((err) => {
         console.error(`[Socket] Failed to update last_seen_at on connect for ${key}:`, err);
       });
-
-    // Periodic heartbeat: refresh last_seen_at every hour while connected
-    const heartbeat = setInterval(() => {
-      Device.findByUserIdAndDeviceId(user.userId, user.deviceId)
-        .then((device) => {
-          if (device) return Device.updateLastSeen(device.id);
-        })
-        .catch((err) => {
-          console.error(`[Socket] Heartbeat last_seen_at update failed for ${key}:`, err);
-        });
-    }, HEARTBEAT_INTERVAL_MS);
+    }
 
     // Join a room named after the userId so we can target by user
     socket.join(user.userId);
 
     socket.on('disconnect', () => {
-      clearInterval(heartbeat);
       // Only remove from the map if *this* socket is still the current one
       const current = onlineClients.get(key);
       if (current && current.socketId === socket.id) {
@@ -165,7 +156,40 @@ export function initSocket(httpServer: HttpServer): Server {
     }); // end disconnect
   }); // end connection
 
+  // Start the shared heartbeat loop for all connected clients
+  startHeartbeat();
+
   return io;
+}
+
+/**
+ * Shared heartbeat loop: iterates over all connected sockets once per
+ * hour and batch-updates `last_seen_at`.  Uses the cached `deviceDbId`
+ * stored on `socket.data` during authentication, avoiding extra DB lookups.
+ */
+function startHeartbeat(): void {
+  if (heartbeatTimer) return;
+
+  heartbeatTimer = setInterval(() => {
+    for (const [, socket] of io.sockets.sockets) {
+      const dbId: string | undefined = socket.data?.deviceDbId;
+      if (dbId) {
+        Device.updateLastSeen(dbId).catch((err) => {
+          console.error(`[Socket] Heartbeat last_seen_at update failed for device ${dbId}:`, err);
+        });
+      }
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+}
+
+/**
+ * Stop the shared heartbeat timer (useful for graceful shutdown / tests).
+ */
+export function stopHeartbeat(): void {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
 }
 
 /**

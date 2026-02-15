@@ -178,7 +178,7 @@ export async function generateChallenge(req: Request, res: Response): Promise<vo
  * @body {string}  deviceId   - Client-generated device identifier (max 255 chars).
  * @body {string}  [fcmToken] - Optional Firebase Cloud Messaging token (max 512 chars).
  *
- * @returns {{ token: string; user: { id: string; username: string } }}
+ * @returns {{ token: string; user: { id: string; username: string }; remainingKeyCount: number; lowKeyCount: boolean }}
  *
  * @error 400 - Missing / malformed fields, or no active challenge.
  * @error 401 - Authentication failed (bad user, bad signature, etc.).
@@ -257,7 +257,6 @@ export async function verifyChallenge(req: Request, res: Response): Promise<void
     } as jwt.SignOptions);
 
     // Check remaining one-time pre-keys so the client can replenish early
-    const LOW_KEY_THRESHOLD = 20;
     const remainingKeys = await OneTimePreKey.countByUserId(user.id);
 
     const response: ApiResponse<{
@@ -274,7 +273,7 @@ export async function verifyChallenge(req: Request, res: Response): Promise<void
           username: user.username,
         },
         remainingKeyCount: remainingKeys,
-        lowKeyCount: remainingKeys < LOW_KEY_THRESHOLD,
+        lowKeyCount: remainingKeys < config.lowKeyThreshold,
       },
     };
     res.json(response);

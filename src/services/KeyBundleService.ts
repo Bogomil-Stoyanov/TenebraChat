@@ -1,5 +1,6 @@
 import { User, SignedPreKey, OneTimePreKey } from '../models';
 import { PreKeyBundle } from '../types';
+import { config } from '../config';
 
 export class KeyBundleService {
   /**
@@ -54,7 +55,10 @@ export class KeyBundleService {
    * Checks if a user needs to upload more one-time pre-keys.
    * Returns true if count is below threshold.
    */
-  static async needsMorePreKeys(userId: string, threshold: number = 10): Promise<boolean> {
+  static async needsMorePreKeys(
+    userId: string,
+    threshold: number = config.lowKeyThreshold
+  ): Promise<boolean> {
     const count = await this.getOneTimePreKeyCount(userId);
     return count < threshold;
   }
