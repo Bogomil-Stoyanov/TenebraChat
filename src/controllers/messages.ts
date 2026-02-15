@@ -99,12 +99,10 @@ export async function sendMessage(req: AuthenticatedRequest, res: Response): Pro
     const recipientDevices = await Device.findByUserId(recipientId);
     if (recipientDevices.length === 0) {
       // No devices registered → user either doesn't exist or has never logged in
-      res
-        .status(404)
-        .json({
-          success: false,
-          error: 'Recipient not found or has no active device',
-        } as ApiResponse);
+      res.status(404).json({
+        success: false,
+        error: 'Recipient not found or has no active device',
+      } as ApiResponse);
       return;
     }
 
@@ -214,12 +212,10 @@ export async function deleteMessages(req: AuthenticatedRequest, res: Response): 
     const { messageIds } = req.body;
 
     if (!Array.isArray(messageIds) || messageIds.length === 0) {
-      res
-        .status(400)
-        .json({
-          success: false,
-          error: 'Missing required field: messageIds (array)',
-        } as ApiResponse);
+      res.status(400).json({
+        success: false,
+        error: 'Missing required field: messageIds (array)',
+      } as ApiResponse);
       return;
     }
 
