@@ -26,6 +26,9 @@ const onlineClients = new Map<string, OnlineClient>();
 /** Reference to the Socket.io server instance. */
 let io: Server;
 
+/** Heartbeat interval: update `last_seen_at` every hour for long-lived sockets. */
+const HEARTBEAT_INTERVAL_MS = 60 * 60 * 1000;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -124,10 +127,31 @@ export function initSocket(httpServer: HttpServer): Server {
     onlineClients.set(key, { userId: user.userId, deviceId: user.deviceId, socketId: socket.id });
     console.log(`Client connected: ${key} (socket ${socket.id})`);
 
+    // Update last_seen_at on connection (fire-and-forget)
+    Device.findByUserIdAndDeviceId(user.userId, user.deviceId)
+      .then((device) => {
+        if (device) return Device.updateLastSeen(device.id);
+      })
+      .catch((err) => {
+        console.error(`[Socket] Failed to update last_seen_at on connect for ${key}:`, err);
+      });
+
+    // Periodic heartbeat: refresh last_seen_at every hour while connected
+    const heartbeat = setInterval(() => {
+      Device.findByUserIdAndDeviceId(user.userId, user.deviceId)
+        .then((device) => {
+          if (device) return Device.updateLastSeen(device.id);
+        })
+        .catch((err) => {
+          console.error(`[Socket] Heartbeat last_seen_at update failed for ${key}:`, err);
+        });
+    }, HEARTBEAT_INTERVAL_MS);
+
     // Join a room named after the userId so we can target by user
     socket.join(user.userId);
 
     socket.on('disconnect', () => {
+      clearInterval(heartbeat);
       // Only remove from the map if *this* socket is still the current one
       const current = onlineClients.get(key);
       if (current && current.socketId === socket.id) {
@@ -138,8 +162,8 @@ export function initSocket(httpServer: HttpServer): Server {
           `Stale socket disconnected for ${key} (socket ${socket.id}) — a newer socket is active`
         );
       }
-    });
-  });
+    }); // end disconnect
+  }); // end connection
 
   return io;
 }

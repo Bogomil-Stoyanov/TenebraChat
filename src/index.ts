@@ -12,8 +12,8 @@ import messageRoutes from './routes/messages';
 import fileRoutes from './routes/files';
 import authRoutes from './routes/auth';
 import { authenticate } from './middleware/auth';
-import { AuthChallenge } from './models';
 import { initSocket } from './socket';
+import { cleanupService } from './services/CleanupService';
 
 const app: Application = express();
 const httpServer = createServer(app);
@@ -84,17 +84,10 @@ async function startServer() {
     // Initialise Socket.io on the shared HTTP server
     initSocket(httpServer);
 
-    httpServer.listen(config.server.port, () => {
-      // Periodically clean up expired auth challenges (every 5 minutes)
-      setInterval(
-        () => {
-          AuthChallenge.cleanupExpired().catch((err) => {
-            console.error('Failed to clean up expired auth challenges:', err);
-          });
-        },
-        5 * 60 * 1000
-      );
+    // Start scheduled maintenance jobs
+    cleanupService.start();
 
+    httpServer.listen(config.server.port, () => {
       console.log(`
 ╔════════════════════════════════════════════════════════════╗
 ║                                                            ║
