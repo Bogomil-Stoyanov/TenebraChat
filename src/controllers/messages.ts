@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { QueuedMessage, Device } from '../models';
 import { ApiResponse } from '../types';
-import { getIO, findOnlineDeviceForUser } from '../socket';
+import { getIO } from '../socket';
 
 /** Maximum ciphertext size: 64 KB base64 ≈ ~48 KB raw. */
 const MAX_CIPHERTEXT_LENGTH = 65_536;
@@ -38,12 +38,20 @@ function validateSendInput(body: Record<string, unknown>): SendMessageInput | st
     return 'Missing required fields: recipientId, ciphertext';
   }
 
+  if (!UUID_RE.test(recipientId.trim())) {
+    return 'recipientId must be a valid UUID';
+  }
+
   if (ciphertext.length > MAX_CIPHERTEXT_LENGTH) {
     return `ciphertext exceeds maximum length of ${MAX_CIPHERTEXT_LENGTH} characters`;
   }
 
-  // Validate base64 encoding
-  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(ciphertext)) {
+  // Strict base64 validation: decode and re-encode to catch malformed input
+  if (ciphertext.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(ciphertext)) {
+    return 'ciphertext must be valid base64';
+  }
+  const decoded = Buffer.from(ciphertext, 'base64');
+  if (decoded.toString('base64') !== ciphertext) {
     return 'ciphertext must be valid base64';
   }
 
@@ -113,50 +121,43 @@ export async function sendMessage(req: AuthenticatedRequest, res: Response): Pro
       return;
     }
 
-    // Check if recipient is online
-    const online = findOnlineDeviceForUser(recipientId);
+    // Check if recipient has any socket connected to their userId room (O(1))
+    const io = getIO();
+    const recipientRoom = io.sockets.adapter.rooms.get(recipientId);
 
-    if (online) {
-      // --- ONLINE: deliver in real-time via Socket.io (with fallback to queue) ---
-      const io = getIO();
-      const socket = io.sockets.sockets.get(online.socketId);
+    if (recipientRoom && recipientRoom.size > 0) {
+      // --- ONLINE: deliver in real-time via the userId room ---
+      io.to(recipientId).emit('new_message', {
+        senderId,
+        ciphertext,
+        type,
+        timestamp: new Date().toISOString(),
+      });
 
-      if (socket && socket.connected) {
-        socket.emit('new_message', {
-          senderId,
-          ciphertext,
-          type,
-          timestamp: new Date().toISOString(),
-        });
+      const response: ApiResponse<{ delivered: boolean }> = {
+        success: true,
+        data: { delivered: true },
+        message: 'Message delivered in real-time',
+      };
+      res.json(response);
+    } else {
+      // --- OFFLINE: persist to the message queue ---
+      const payloadBuffer = Buffer.from(ciphertext, 'base64');
 
-        const response: ApiResponse<{ delivered: boolean }> = {
-          success: true,
-          data: { delivered: true },
-          message: 'Message delivered in real-time',
-        };
-        res.json(response);
-        return;
-      }
+      const queued = await QueuedMessage.query().insertAndFetch({
+        recipient_id: recipientId,
+        sender_id: senderId,
+        encrypted_payload: payloadBuffer,
+        message_type: type,
+      });
 
-      // Socket is stale — fall through to offline queueing
+      const response: ApiResponse<{ delivered: boolean; messageId: string }> = {
+        success: true,
+        data: { delivered: false, messageId: queued.id },
+        message: 'Recipient offline — message queued',
+      };
+      res.status(201).json(response);
     }
-
-    // --- OFFLINE (or stale socket): persist to the message queue ---
-    const payloadBuffer = Buffer.from(ciphertext, 'base64');
-
-    const queued = await QueuedMessage.query().insertAndFetch({
-      recipient_id: recipientId,
-      sender_id: senderId,
-      encrypted_payload: payloadBuffer,
-      message_type: type,
-    });
-
-    const response: ApiResponse<{ delivered: boolean; messageId: string }> = {
-      success: true,
-      data: { delivered: false, messageId: queued.id },
-      message: 'Recipient offline — message queued',
-    };
-    res.status(201).json(response);
   } catch (error) {
     console.error('Error sending message:', error);
     res.status(500).json({ success: false, error: 'Internal server error' } as ApiResponse);
