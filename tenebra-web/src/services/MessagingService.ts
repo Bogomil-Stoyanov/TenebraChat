@@ -407,7 +407,8 @@ export async function sendMessage(
 /**
  * Process an incoming message (real-time or offline).
  *
- * @returns The decrypted {@link DecryptedMessage}, or `null` if decryption fails.
+ * @returns The decrypted {@link DecryptedMessage}.
+ * @throws If decryption, session lookup, or identity key verification fails.
  */
 export async function processIncomingMessage(
     senderId: string,
@@ -421,9 +422,19 @@ export async function processIncomingMessage(
     if (type === 'pre_key_signal_message') {
         const envelope = base64ToEnvelope<PreKeySignalEnvelope>(ciphertextB64);
 
-        // Verify the signed pre-key signature from the sender is implicitly
-        // trusted via the X3DH agreement — the signature was verified when
-        // the sender fetched *our* bundle.
+        // TOFU (Trust On First Use): if we already have a session with this
+        // sender, verify that the identity key matches what we stored the
+        // first time.  A mismatch means either the sender re-registered or
+        // someone is attempting a MITM key-swap.
+        const existingSession = await loadSession(senderId, encryptionKey);
+        if (existingSession) {
+            if (existingSession.remoteIdentityKey !== envelope.identityKey) {
+                throw new Error(
+                    `Identity key mismatch for sender ${senderId}. ` +
+                    'The remote party may have re-registered or the message may be forged.',
+                );
+            }
+        }
 
         // Load our local key material
         const identity = await getIdentityKeyPair(encryptionKey);

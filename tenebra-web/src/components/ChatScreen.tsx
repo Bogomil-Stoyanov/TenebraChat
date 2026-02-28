@@ -33,6 +33,7 @@ import {
 } from '@/services/MessagingService';
 import {
     connectSocket,
+    disconnectSocket,
     onNewMessage,
     isConnected,
 } from '@/services/SocketService';
@@ -83,8 +84,8 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
             let resolvedName = username;
             if (!resolvedName) {
                 try {
-                    const user = await resolveUsername(userId);
-                    resolvedName = user.username;
+                    const resolved = await resolveUserId(userId);
+                    resolvedName = resolved.username;
                 } catch {
                     resolvedName = userId.slice(0, 8); // fallback
                 }
@@ -152,6 +153,7 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
         return () => {
             sock.off('connect', updateStatus);
             sock.off('disconnect', updateStatus);
+            disconnectSocket();
         };
     }, []);
 
@@ -349,7 +351,7 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
                                     : 'bg-gray-800 text-gray-100'
                                     }`}
                             >
-                                <p className="wrap-break-word">{msg.text}</p>
+                                <p className="break-words">{msg.text}</p>
                                 <p
                                     className={`mt-1 text-[10px] ${msg.direction === 'out'
                                         ? 'text-indigo-200/70'

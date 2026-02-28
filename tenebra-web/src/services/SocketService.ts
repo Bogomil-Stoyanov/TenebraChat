@@ -40,6 +40,13 @@ const messageHandlers: Set<MessageHandler> = new Set();
 export function connectSocket(): Socket {
     if (socket?.connected) return socket;
 
+    // Clean up any existing disconnected/connecting socket to prevent leaks
+    if (socket) {
+        socket.removeAllListeners();
+        socket.disconnect();
+        socket = null;
+    }
+
     const token = getToken();
     if (!token) throw new Error('Cannot connect socket: no JWT token available.');
 
