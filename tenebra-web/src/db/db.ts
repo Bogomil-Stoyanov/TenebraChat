@@ -66,6 +66,20 @@ export interface Contact {
   username: string;
 }
 
+/** Attachment metadata stored alongside a message (encrypted at rest). */
+export interface AttachmentMeta {
+  /** Backend file URL / path. */
+  url: string;
+  /** Base64 raw AES-GCM-256 file key (encrypted inside the E2EE payload). */
+  keyBase64: string;
+  /** Base64 12-byte IV used when encrypting the file. */
+  ivBase64: string;
+  /** Original MIME type (e.g. `image/png`). */
+  mimeType: string;
+  /** Original file name. */
+  name: string;
+}
+
 /** Persisted chat message — text is always encrypted at rest. */
 export interface Message {
   /** Message UUID (primary key). */
@@ -80,6 +94,10 @@ export interface Message {
   direction: 'in' | 'out';
   /** Unix epoch milliseconds. */
   timestamp: number;
+  /** AES-GCM encrypted attachment JSON (Base64), or undefined. */
+  encryptedAttachment?: string;
+  /** AES-GCM IV for the attachment field (Base64). */
+  encryptedAttachmentIv?: string;
 }
 
 /** In-memory decrypted message for UI consumption. */
@@ -89,6 +107,8 @@ export interface DecryptedMessage {
   text: string;
   direction: 'in' | 'out';
   timestamp: number;
+  /** Decrypted attachment metadata (if this message carries a file). */
+  attachment?: AttachmentMeta;
 }
 
 // ─── Database ──────────────────────────────────────────────────────────────────
@@ -114,6 +134,17 @@ class TenebraDB extends Dexie {
     });
 
     this.version(2).stores({
+      identity: 'id',
+      preKeys: 'keyId',
+      signedPreKeys: 'keyId',
+      sessions: 'id',
+      meta: 'key',
+      contacts: 'userId',
+      messages: 'id, contactId, timestamp',
+    });
+
+    // v3: attachment columns (non-indexed, just persisted)
+    this.version(3).stores({
       identity: 'id',
       preKeys: 'keyId',
       signedPreKeys: 'keyId',
