@@ -46,6 +46,22 @@ class MinioService {
     return objectName;
   }
 
+  /**
+   * Upload a file with a caller-specified object name.
+   */
+  async uploadFileWithName(
+    objectName: string,
+    buffer: Buffer,
+    contentType: string,
+    metadata?: Record<string, string>
+  ): Promise<string> {
+    await this.client.putObject(this.bucket, objectName, buffer, buffer.length, {
+      'Content-Type': contentType,
+      ...metadata,
+    });
+    return objectName;
+  }
+
   async downloadFile(objectName: string): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];

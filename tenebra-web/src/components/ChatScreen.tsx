@@ -20,9 +20,13 @@ import {
     Wifi,
     WifiOff,
     X,
+    Paperclip,
+    Download,
+    FileIcon,
+    Loader2,
 } from 'lucide-react';
 import { db } from '@/db/db';
-import type { Contact, DecryptedMessage } from '@/db/db';
+import type { Contact, DecryptedMessage, AttachmentMeta } from '@/db/db';
 import {
     sendMessage,
     processIncomingMessage,
@@ -31,6 +35,16 @@ import {
     resolveUsername,
     resolveUserId,
 } from '@/services/MessagingService';
+import {
+    generateFileKey,
+    encryptFile,
+    decryptFile,
+    exportKeyToBase64,
+    importKeyFromBase64,
+    ivToBase64,
+    ivFromBase64,
+} from '@/services/FileCryptoService';
+import { uploadEncryptedFile, downloadEncryptedFile } from '@/services/FileService';
 import {
     connectSocket,
     disconnectSocket,
@@ -65,8 +79,14 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
     const [newUsername, setNewUsername] = useState('');
     const [resolving, setResolving] = useState(false);
 
+    // Attachment state
+    const [pendingFile, setPendingFile] = useState<File | null>(null);
+    /** objectURL cache for decrypted image attachments, keyed by message ID. */
+    const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
+
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // ── Load contacts ────────────────────────────────────────────────────────
     const refreshContacts = useCallback(async () => {
@@ -210,17 +230,40 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
 
     // ── Send a message ───────────────────────────────────────────────────────
     const handleSend = useCallback(async () => {
-        if (!selectedContact || !inputText.trim() || sending) return;
+        if (!selectedContact || sending) return;
+        // Must have text or a pending file
+        if (!inputText.trim() && !pendingFile) return;
         setError('');
         setSending(true);
         try {
+            let attachment: AttachmentMeta | undefined;
+
+            // Encrypt & upload the pending file if any
+            if (pendingFile) {
+                const fileKey = await generateFileKey();
+                const { encrypted, iv } = await encryptFile(pendingFile, fileKey);
+                const encryptedBlob = new Blob([encrypted], { type: 'application/octet-stream' });
+                const { objectName } = await uploadEncryptedFile(encryptedBlob, pendingFile.name);
+
+                attachment = {
+                    url: objectName,
+                    keyBase64: await exportKeyToBase64(fileKey),
+                    ivBase64: ivToBase64(iv),
+                    mimeType: pendingFile.type || 'application/octet-stream',
+                    name: pendingFile.name,
+                };
+            }
+
             const msg = await sendMessage(
                 selectedContact.userId,
-                inputText.trim(),
+                inputText.trim() || (pendingFile ? `\ud83d\udcce ${pendingFile.name}` : ''),
                 encryptionKey,
+                attachment,
             );
             setMessages((prev) => [...prev, msg]);
             setInputText('');
+            setPendingFile(null);
+            if (fileInputRef.current) fileInputRef.current.value = '';
             inputRef.current?.focus();
         } catch (err) {
             console.error('[Chat] Send failed:', err);
@@ -228,7 +271,69 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
         } finally {
             setSending(false);
         }
-    }, [selectedContact, inputText, sending, encryptionKey]);
+    }, [selectedContact, inputText, sending, encryptionKey, pendingFile]);
+
+    // ── Decrypt & render image attachments ──────────────────────────────────
+    const decryptAndCacheImage = useCallback(
+        async (msgId: string, att: AttachmentMeta) => {
+            if (imageUrls[msgId]) return; // already cached
+            try {
+                const blob = await downloadEncryptedFile(att.url);
+                const key = await importKeyFromBase64(att.keyBase64);
+                const iv = ivFromBase64(att.ivBase64);
+                const decryptedBlob = await decryptFile(blob, key, iv);
+                const objectUrl = URL.createObjectURL(
+                    new Blob([decryptedBlob], { type: att.mimeType }),
+                );
+                setImageUrls((prev) => ({ ...prev, [msgId]: objectUrl }));
+            } catch (err) {
+                console.error(`[Chat] Failed to decrypt image for message ${msgId}:`, err);
+            }
+        },
+        [imageUrls],
+    );
+
+    // Auto-decrypt image attachments when messages change
+    useEffect(() => {
+        for (const msg of messages) {
+            if (msg.attachment?.mimeType.startsWith('image/') && !imageUrls[msg.id]) {
+                decryptAndCacheImage(msg.id, msg.attachment);
+            }
+        }
+    }, [messages, imageUrls, decryptAndCacheImage]);
+
+    // Revoke object URLs on unmount
+    useEffect(() => {
+        return () => {
+            Object.values(imageUrls).forEach(URL.revokeObjectURL);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // ── Download non-image attachment ───────────────────────────────────────
+    const handleDownloadAttachment = useCallback(async (att: AttachmentMeta) => {
+        try {
+            const blob = await downloadEncryptedFile(att.url);
+            const key = await importKeyFromBase64(att.keyBase64);
+            const iv = ivFromBase64(att.ivBase64);
+            const decryptedBlob = await decryptFile(blob, key, iv);
+
+            // Trigger browser download
+            const url = URL.createObjectURL(
+                new Blob([decryptedBlob], { type: att.mimeType }),
+            );
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = att.name;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('[Chat] Failed to download/decrypt attachment:', err);
+            setError('Failed to decrypt attachment.');
+        }
+    }, []);
 
     // ── Start new chat ───────────────────────────────────────────────────────
     const handleNewChat = useCallback(async () => {
@@ -351,7 +456,37 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
                                     : 'bg-gray-800 text-gray-100'
                                     }`}
                             >
-                                <p className="break-words">{msg.text}</p>
+                                {/* Attachment rendering */}
+                                {msg.attachment && (
+                                    <div className="mb-1">
+                                        {msg.attachment.mimeType.startsWith('image/') ? (
+                                            imageUrls[msg.id] ? (
+                                                <img
+                                                    src={imageUrls[msg.id]}
+                                                    alt={msg.attachment.name}
+                                                    className="max-h-64 rounded-lg object-contain"
+                                                />
+                                            ) : (
+                                                <div className="flex h-32 w-48 items-center justify-center rounded-lg bg-gray-700/50">
+                                                    <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
+                                                </div>
+                                            )
+                                        ) : (
+                                            <button
+                                                onClick={() => handleDownloadAttachment(msg.attachment!)}
+                                                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition ${msg.direction === 'out'
+                                                        ? 'bg-indigo-500/30 hover:bg-indigo-500/50'
+                                                        : 'bg-gray-700/50 hover:bg-gray-700/80'
+                                                    }`}
+                                            >
+                                                <FileIcon className="h-4 w-4 shrink-0" />
+                                                <span className="truncate">{msg.attachment.name}</span>
+                                                <Download className="h-3.5 w-3.5 shrink-0" />
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                                {msg.text && <p className="wrap-break-word">{msg.text}</p>}
                                 <p
                                     className={`mt-1 text-[10px] ${msg.direction === 'out'
                                         ? 'text-indigo-200/70'
@@ -389,23 +524,70 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
                         }}
                         className="flex items-center gap-3 border-t border-gray-800 px-6 py-3"
                     >
+                        {/* Hidden file input */}
                         <input
-                            ref={inputRef}
-                            type="text"
-                            value={inputText}
-                            onChange={(e) => setInputText(e.target.value)}
-                            placeholder="Type a message…"
-                            className="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-gray-100 placeholder-gray-500 outline-none transition focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-                            aria-label="Message input"
-                            autoFocus
+                            ref={fileInputRef}
+                            type="file"
+                            className="hidden"
+                            onChange={(e) => {
+                                const file = e.target.files?.[0] ?? null;
+                                setPendingFile(file);
+                            }}
+                            aria-label="Attach file"
                         />
+
+                        {/* Attachment button */}
+                        <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-gray-400 transition hover:bg-gray-800 hover:text-gray-200"
+                            aria-label="Attach file"
+                        >
+                            <Paperclip className="h-4 w-4" />
+                        </button>
+
+                        <div className="flex flex-1 flex-col gap-1">
+                            {/* Pending file indicator */}
+                            {pendingFile && (
+                                <div className="flex items-center gap-2 rounded-md bg-gray-800/60 px-3 py-1 text-xs text-gray-300">
+                                    <FileIcon className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
+                                    <span className="truncate">{pendingFile.name}</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setPendingFile(null);
+                                            if (fileInputRef.current) fileInputRef.current.value = '';
+                                        }}
+                                        className="ml-auto text-gray-500 hover:text-gray-300"
+                                        aria-label="Remove attachment"
+                                    >
+                                        <X className="h-3 w-3" />
+                                    </button>
+                                </div>
+                            )}
+                            <input
+                                ref={inputRef}
+                                type="text"
+                                value={inputText}
+                                onChange={(e) => setInputText(e.target.value)}
+                                placeholder="Type a message…"
+                                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-gray-100 placeholder-gray-500 outline-none transition focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                                aria-label="Message input"
+                                autoFocus
+                            />
+                        </div>
+
                         <button
                             type="submit"
-                            disabled={!inputText.trim() || sending}
+                            disabled={(!inputText.trim() && !pendingFile) || sending}
                             className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-600 text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
                             aria-label="Send message"
                         >
-                            <Send className="h-4 w-4" />
+                            {sending ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Send className="h-4 w-4" />
+                            )}
                         </button>
                     </form>
                 )}

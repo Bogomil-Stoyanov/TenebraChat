@@ -29,7 +29,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import api from '@/api/client';
 import { db } from '@/db/db';
-import type { Message, DecryptedMessage } from '@/db/db';
+import type { Message, DecryptedMessage, AttachmentMeta } from '@/db/db';
 import { encrypt, decrypt } from './SecurityService';
 import {
     getIdentityKeyPair,
@@ -86,6 +86,14 @@ interface SignalEnvelope {
     ciphertext: string;     // Base64(nonce ‖ secretbox output)
 }
 
+// ─── Inner payload ─────────────────────────────────────────────────────────────
+
+/** JSON structure that gets encrypted inside the NaCl secretbox. */
+interface InnerPayload {
+    text: string;
+    attachment?: AttachmentMeta;
+}
+
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Concatenate Uint8Arrays. */
@@ -130,12 +138,12 @@ async function hkdf(
 }
 
 /**
- * Encrypt plaintext with NaCl secretbox (XSalsa20-Poly1305).
+ * Encrypt an {@link InnerPayload} with NaCl secretbox (XSalsa20-Poly1305).
  * Returns Base64(nonce ‖ ciphertext).
  */
-function sealMessage(plaintext: string, sessionKey: Uint8Array): string {
+function sealMessage(payload: InnerPayload, sessionKey: Uint8Array): string {
     const nonce = nacl.randomBytes(nacl.secretbox.nonceLength);
-    const msgBytes = decodeUTF8(plaintext);
+    const msgBytes = decodeUTF8(JSON.stringify(payload));
     const box = nacl.secretbox(msgBytes, nonce, sessionKey);
     return encodeBase64(concat(nonce, box));
 }
@@ -143,13 +151,13 @@ function sealMessage(plaintext: string, sessionKey: Uint8Array): string {
 /**
  * Decrypt a Base64(nonce ‖ ciphertext) produced by {@link sealMessage}.
  */
-function openMessage(sealed: string, sessionKey: Uint8Array): string {
+function openMessage(sealed: string, sessionKey: Uint8Array): InnerPayload {
     const data = decodeBase64(sealed);
     const nonce = data.slice(0, nacl.secretbox.nonceLength);
     const box = data.slice(nacl.secretbox.nonceLength);
     const plain = nacl.secretbox.open(box, nonce, sessionKey);
     if (!plain) throw new Error('Decryption failed — invalid session key or corrupted message.');
-    return encodeUTF8(plain);
+    return JSON.parse(encodeUTF8(plain)) as InnerPayload;
 }
 
 /**
@@ -247,7 +255,7 @@ async function x3dhResponder(
 
 // ─── Local storage helpers ─────────────────────────────────────────────────────
 
-/** Encrypt plaintext and persist as a Message in IndexedDB. */
+/** Encrypt text (+optional attachment meta) and persist as a Message in IndexedDB. */
 async function persistMessage(
     id: string,
     contactId: string,
@@ -255,8 +263,18 @@ async function persistMessage(
     direction: 'in' | 'out',
     timestamp: number,
     encryptionKey: CryptoKey,
+    attachment?: AttachmentMeta,
 ): Promise<DecryptedMessage> {
     const { cipherText, iv } = await encrypt(plaintext, encryptionKey);
+
+    let encryptedAttachment: string | undefined;
+    let encryptedAttachmentIv: string | undefined;
+    if (attachment) {
+        const enc = await encrypt(JSON.stringify(attachment), encryptionKey);
+        encryptedAttachment = enc.cipherText;
+        encryptedAttachmentIv = enc.iv;
+    }
+
     const row: Message = {
         id,
         contactId,
@@ -264,9 +282,11 @@ async function persistMessage(
         encryptedTextIv: iv,
         direction,
         timestamp,
+        encryptedAttachment,
+        encryptedAttachmentIv,
     };
     await db.messages.add(row);
-    return { id, contactId, text: plaintext, direction, timestamp };
+    return { id, contactId, text: plaintext, direction, timestamp, attachment };
 }
 
 /** Decrypt a stored Message row into a DecryptedMessage. */
@@ -275,12 +295,20 @@ async function decryptMessageRow(
     encryptionKey: CryptoKey,
 ): Promise<DecryptedMessage> {
     const text = await decrypt(row.encryptedText, row.encryptedTextIv, encryptionKey);
+
+    let attachment: AttachmentMeta | undefined;
+    if (row.encryptedAttachment && row.encryptedAttachmentIv) {
+        const json = await decrypt(row.encryptedAttachment, row.encryptedAttachmentIv, encryptionKey);
+        attachment = JSON.parse(json) as AttachmentMeta;
+    }
+
     return {
         id: row.id,
         contactId: row.contactId,
         text,
         direction: row.direction,
         timestamp: row.timestamp,
+        attachment,
     };
 }
 
@@ -316,6 +344,7 @@ export async function sendFirstMessage(
     contactUserId: string,
     plaintext: string,
     encryptionKey: CryptoKey,
+    attachment?: AttachmentMeta,
 ): Promise<DecryptedMessage> {
     // 1. Fetch remote key bundle
     const bundleRes = await api.get(`/keys/bundle/${contactUserId}`);
@@ -345,7 +374,7 @@ export async function sendFirstMessage(
     );
 
     // 5. Encrypt the plaintext
-    const sealed = sealMessage(plaintext, sessionKey);
+    const sealed = sealMessage({ text: plaintext, attachment }, sessionKey);
 
     // 6. Build the envelope
     const envelope: PreKeySignalEnvelope = {
@@ -373,7 +402,7 @@ export async function sendFirstMessage(
     await storeSession(contactUserId, sessionData, encryptionKey);
 
     // 9. Persist local message (encrypted at rest)
-    return persistMessage(uuidv4(), contactUserId, plaintext, 'out', Date.now(), encryptionKey);
+    return persistMessage(uuidv4(), contactUserId, plaintext, 'out', Date.now(), encryptionKey, attachment);
 }
 
 /**
@@ -383,15 +412,16 @@ export async function sendMessage(
     contactUserId: string,
     plaintext: string,
     encryptionKey: CryptoKey,
+    attachment?: AttachmentMeta,
 ): Promise<DecryptedMessage> {
     const session = await loadSession(contactUserId, encryptionKey);
     if (!session) {
         // No session yet — establish one
-        return sendFirstMessage(contactUserId, plaintext, encryptionKey);
+        return sendFirstMessage(contactUserId, plaintext, encryptionKey, attachment);
     }
 
     const sessionKey = decodeBase64(session.sessionKey);
-    const sealed = sealMessage(plaintext, sessionKey);
+    const sealed = sealMessage({ text: plaintext, attachment }, sessionKey);
 
     const envelope: SignalEnvelope = { ciphertext: sealed };
 
@@ -401,7 +431,7 @@ export async function sendMessage(
         type: 'signal_message',
     });
 
-    return persistMessage(uuidv4(), contactUserId, plaintext, 'out', Date.now(), encryptionKey);
+    return persistMessage(uuidv4(), contactUserId, plaintext, 'out', Date.now(), encryptionKey, attachment);
 }
 
 /**
@@ -417,7 +447,7 @@ export async function processIncomingMessage(
     timestamp: number,
     encryptionKey: CryptoKey,
 ): Promise<DecryptedMessage> {
-    let plaintext: string;
+    let payload: InnerPayload;
 
     if (type === 'pre_key_signal_message') {
         const envelope = base64ToEnvelope<PreKeySignalEnvelope>(ciphertextB64);
@@ -467,7 +497,7 @@ export async function processIncomingMessage(
         );
 
         // Decrypt the message body
-        plaintext = openMessage(envelope.ciphertext, sessionKey);
+        payload = openMessage(envelope.ciphertext, sessionKey);
 
         // Persist the session
         const sessionData: SessionData = {
@@ -493,11 +523,11 @@ export async function processIncomingMessage(
         }
         const envelope = base64ToEnvelope<SignalEnvelope>(ciphertextB64);
         const sessionKey = decodeBase64(session.sessionKey);
-        plaintext = openMessage(envelope.ciphertext, sessionKey);
+        payload = openMessage(envelope.ciphertext, sessionKey);
     }
 
     // Persist the message locally (encrypted at rest)
-    return persistMessage(uuidv4(), senderId, plaintext, 'in', timestamp, encryptionKey);
+    return persistMessage(uuidv4(), senderId, payload.text, 'in', timestamp, encryptionKey, payload.attachment);
 }
 
 /**
