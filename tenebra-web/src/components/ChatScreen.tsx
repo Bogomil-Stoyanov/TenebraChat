@@ -24,6 +24,9 @@ import {
     Download,
     FileIcon,
     Loader2,
+    ZoomIn,
+    ZoomOut,
+    RotateCw,
 } from 'lucide-react';
 import { db } from '@/db/db';
 import type { Contact, DecryptedMessage, AttachmentMeta } from '@/db/db';
@@ -83,6 +86,15 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
     const [pendingFile, setPendingFile] = useState<File | null>(null);
     /** objectURL cache for decrypted image attachments, keyed by message ID. */
     const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
+
+    // Lightbox state
+    const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+    const [lightboxScale, setLightboxScale] = useState(1);
+    const [lightboxRotation, setLightboxRotation] = useState(0);
+
+    // Drag-and-drop state
+    const [dragging, setDragging] = useState(false);
+    const dragCounter = useRef(0);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -359,9 +371,70 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
         }
     }, [newUsername, resolving, user.username, ensureContact]);
 
+    // ── Lightbox helpers ─────────────────────────────────────────────────────
+    const openLightbox = useCallback((src: string) => {
+        setLightboxSrc(src);
+        setLightboxScale(1);
+        setLightboxRotation(0);
+    }, []);
+
+    const closeLightbox = useCallback(() => {
+        setLightboxSrc(null);
+    }, []);
+
+    // ── Drag-and-drop handlers ──────────────────────────────────────────────
+    const handleDragEnter = useCallback(
+        (e: React.DragEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dragCounter.current += 1;
+            if (e.dataTransfer.types.includes('Files')) setDragging(true);
+        },
+        [],
+    );
+
+    const handleDragLeave = useCallback(
+        (e: React.DragEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dragCounter.current -= 1;
+            if (dragCounter.current <= 0) {
+                dragCounter.current = 0;
+                setDragging(false);
+            }
+        },
+        [],
+    );
+
+    const handleDragOver = useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+    }, []);
+
+    const handleDrop = useCallback(
+        (e: React.DragEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dragCounter.current = 0;
+            setDragging(false);
+            const file = e.dataTransfer.files?.[0] ?? null;
+            if (file) {
+                setPendingFile(file);
+                if (fileInputRef.current) fileInputRef.current.value = '';
+            }
+        },
+        [],
+    );
+
     // ── Render ───────────────────────────────────────────────────────────────
     return (
-        <div className="flex h-screen bg-gray-950 text-gray-100">
+        <div
+            className="flex h-screen bg-gray-950 text-gray-100"
+            onDragEnter={selectedContact ? handleDragEnter : undefined}
+            onDragLeave={selectedContact ? handleDragLeave : undefined}
+            onDragOver={selectedContact ? handleDragOver : undefined}
+            onDrop={selectedContact ? handleDrop : undefined}
+        >
             {/* ─── Sidebar ─────────────────────────────────────────────── */}
             <aside className="flex w-72 flex-col border-r border-gray-800 bg-gray-900">
                 {/* Sidebar header */}
@@ -412,7 +485,7 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
             </aside>
 
             {/* ─── Main panel ──────────────────────────────────────────── */}
-            <main className="flex flex-1 flex-col">
+            <main className="relative flex flex-1 flex-col">
                 {/* Header */}
                 <header className="flex h-14 items-center border-b border-gray-800 px-6">
                     {selectedContact ? (
@@ -423,6 +496,18 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
                         </h2>
                     )}
                 </header>
+
+                {/* Drag overlay */}
+                {dragging && selectedContact && (
+                    <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-indigo-600/10 backdrop-blur-sm">
+                        <div className="flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-indigo-400 bg-gray-900/80 px-12 py-10">
+                            <Paperclip className="h-10 w-10 text-indigo-400" />
+                            <p className="text-sm font-medium text-indigo-300">
+                                Drop file to attach
+                            </p>
+                        </div>
+                    </div>
+                )}
 
                 {/* Messages area */}
                 <div className="flex flex-1 flex-col overflow-y-auto px-6 py-4">
@@ -464,7 +549,8 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
                                                 <img
                                                     src={imageUrls[msg.id]}
                                                     alt={msg.attachment.name}
-                                                    className="max-h-64 rounded-lg object-contain"
+                                                    className="max-h-64 cursor-pointer rounded-lg object-contain transition hover:opacity-90"
+                                                    onClick={() => openLightbox(imageUrls[msg.id])}
                                                 />
                                             ) : (
                                                 <div className="flex h-32 w-48 items-center justify-center rounded-lg bg-gray-700/50">
@@ -475,8 +561,8 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
                                             <button
                                                 onClick={() => handleDownloadAttachment(msg.attachment!)}
                                                 className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition ${msg.direction === 'out'
-                                                        ? 'bg-indigo-500/30 hover:bg-indigo-500/50'
-                                                        : 'bg-gray-700/50 hover:bg-gray-700/80'
+                                                    ? 'bg-indigo-500/30 hover:bg-indigo-500/50'
+                                                    : 'bg-gray-700/50 hover:bg-gray-700/80'
                                                     }`}
                                             >
                                                 <FileIcon className="h-4 w-4 shrink-0" />
@@ -594,6 +680,68 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
             </main>
 
             {/* ─── New-chat modal overlay ──────────────────────────────── */}
+            {/* ─── Image lightbox ─────────────────────────────────── */}
+            {lightboxSrc && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+                    onClick={closeLightbox}
+                >
+                    {/* Toolbar */}
+                    <div
+                        className="absolute top-4 right-4 flex items-center gap-1 z-10"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <button
+                            onClick={() => setLightboxScale((s) => Math.min(s + 0.25, 5))}
+                            className="rounded-lg bg-gray-800/80 p-2 text-gray-300 transition hover:bg-gray-700 hover:text-white"
+                            aria-label="Zoom in"
+                        >
+                            <ZoomIn className="h-5 w-5" />
+                        </button>
+                        <button
+                            onClick={() => setLightboxScale((s) => Math.max(s - 0.25, 0.25))}
+                            className="rounded-lg bg-gray-800/80 p-2 text-gray-300 transition hover:bg-gray-700 hover:text-white"
+                            aria-label="Zoom out"
+                        >
+                            <ZoomOut className="h-5 w-5" />
+                        </button>
+                        <button
+                            onClick={() => setLightboxRotation((r) => r + 90)}
+                            className="rounded-lg bg-gray-800/80 p-2 text-gray-300 transition hover:bg-gray-700 hover:text-white"
+                            aria-label="Rotate"
+                        >
+                            <RotateCw className="h-5 w-5" />
+                        </button>
+                        <button
+                            onClick={closeLightbox}
+                            className="rounded-lg bg-gray-800/80 p-2 text-gray-300 transition hover:bg-gray-700 hover:text-white"
+                            aria-label="Close"
+                        >
+                            <X className="h-5 w-5" />
+                        </button>
+                    </div>
+
+                    {/* Image */}
+                    <img
+                        src={lightboxSrc}
+                        alt="Preview"
+                        className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain transition-transform duration-200"
+                        style={{
+                            transform: `scale(${lightboxScale}) rotate(${lightboxRotation}deg)`,
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        onWheel={(e) => {
+                            e.stopPropagation();
+                            setLightboxScale((s) =>
+                                e.deltaY < 0
+                                    ? Math.min(s + 0.15, 5)
+                                    : Math.max(s - 0.15, 0.25),
+                            );
+                        }}
+                    />
+                </div>
+            )}
+
             {showNewChat && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
                     <div className="w-full max-w-sm rounded-2xl border border-gray-800 bg-gray-900 p-6 shadow-xl">
