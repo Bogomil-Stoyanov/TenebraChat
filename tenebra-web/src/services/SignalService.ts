@@ -20,12 +20,6 @@ import { db } from '@/db/db';
 /** Number of one-time pre-keys to generate per batch. */
 const ONE_TIME_PRE_KEY_COUNT = 100;
 
-/** Starting key ID for one-time pre-keys. */
-const OTP_KEY_START_ID = 1;
-
-/** Starting key ID for the first signed pre-key. */
-const SIGNED_PRE_KEY_ID = 1;
-
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 export interface RegistrationPayload {
@@ -58,6 +52,18 @@ async function encryptPrivateKey(
     return encrypt(b64, encryptionKey);
 }
 
+/**
+ * Allocate the next key ID from a monotonically increasing counter
+ * stored in the Dexie meta table.  This avoids collisions when
+ * uploading additional pre-key batches.
+ */
+async function allocateKeyId(counterKey: string, count = 1): Promise<number> {
+    const row = await db.meta.get(counterKey);
+    const start = row ? parseInt(row.value, 10) : 1;
+    await db.meta.put({ key: counterKey, value: String(start + count) });
+    return start;
+}
+
 // ─── Public API ────────────────────────────────────────────────────────────────
 
 /**
@@ -77,6 +83,7 @@ export async function generateRegistrationData(
     const registrationId = crypto.getRandomValues(new Uint16Array(1))[0];
 
     // ── 2. Signed pre-key (X25519) ─────────────────────────────────────────
+    const signedPreKeyId = await allocateKeyId('next_signed_pre_key_id');
     const signedPreKeyPair = nacl.box.keyPair();
     // Sign the public key of the signed pre-key with the identity secret key
     const signedPreKeySignature = nacl.sign.detached(
@@ -85,6 +92,7 @@ export async function generateRegistrationData(
     );
 
     // ── 3. One-time pre-keys (X25519) ──────────────────────────────────────
+    const otpStartId = await allocateKeyId('next_otp_key_id', ONE_TIME_PRE_KEY_COUNT);
     const oneTimePreKeys: Array<{
         keyId: number;
         publicKey: Uint8Array;
@@ -94,7 +102,7 @@ export async function generateRegistrationData(
     for (let i = 0; i < ONE_TIME_PRE_KEY_COUNT; i++) {
         const kp = nacl.box.keyPair();
         oneTimePreKeys.push({
-            keyId: OTP_KEY_START_ID + i,
+            keyId: otpStartId + i,
             publicKey: kp.publicKey,
             secretKey: kp.secretKey,
         });
@@ -115,25 +123,29 @@ export async function generateRegistrationData(
     // Signed pre-key
     const encSignedPK = await encryptPrivateKey(signedPreKeyPair.secretKey, encryptionKey);
     await db.signedPreKeys.put({
-        keyId: SIGNED_PRE_KEY_ID,
+        keyId: signedPreKeyId,
         publicKey: encodeBase64(signedPreKeyPair.publicKey),
         encryptedPrivateKey: encSignedPK.cipherText,
         encryptedPrivateKeyIv: encSignedPK.iv,
         signature: encodeBase64(signedPreKeySignature),
     });
 
-    // One-time pre-keys (batch insert)
-    const preKeyRows = await Promise.all(
-        oneTimePreKeys.map(async (pk) => {
-            const enc = await encryptPrivateKey(pk.secretKey, encryptionKey);
-            return {
-                keyId: pk.keyId,
-                publicKey: encodeBase64(pk.publicKey),
-                encryptedPrivateKey: enc.cipherText,
-                encryptedPrivateKeyIv: enc.iv,
-            };
-        }),
-    );
+    // One-time pre-keys (encrypt sequentially to avoid UI jank on low-end devices)
+    const preKeyRows: Array<{
+        keyId: number;
+        publicKey: string;
+        encryptedPrivateKey: string;
+        encryptedPrivateKeyIv: string;
+    }> = [];
+    for (const pk of oneTimePreKeys) {
+        const enc = await encryptPrivateKey(pk.secretKey, encryptionKey);
+        preKeyRows.push({
+            keyId: pk.keyId,
+            publicKey: encodeBase64(pk.publicKey),
+            encryptedPrivateKey: enc.cipherText,
+            encryptedPrivateKeyIv: enc.iv,
+        });
+    }
     await db.preKeys.bulkPut(preKeyRows);
 
     // ── 5. Build backend payload (public keys only) ─────────────────────────
@@ -141,7 +153,7 @@ export async function generateRegistrationData(
         identityPublicKey: encodeBase64(identityKeyPair.publicKey),
         registrationId,
         signedPreKey: {
-            keyId: SIGNED_PRE_KEY_ID,
+            keyId: signedPreKeyId,
             publicKey: encodeBase64(signedPreKeyPair.publicKey),
             signature: encodeBase64(signedPreKeySignature),
         },

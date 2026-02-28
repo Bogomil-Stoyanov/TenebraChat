@@ -54,13 +54,14 @@ export async function register(
     username: string,
     encryptionKey: CryptoKey,
 ): Promise<AuthResult> {
-    // Check if we already have local keys (e.g. previous registration succeeded
-    // but auto-login failed). If so, skip key generation and go straight to login.
+    // If local keys already exist (e.g. previous registration succeeded but
+    // key upload or auto-login failed), log in and ensure keys are uploaded.
     const existingIdentity = await db.identity.get('self');
     if (existingIdentity) {
-        console.info('[AUTH] Local identity already exists — skipping key generation, proceeding to login.');
         const deviceId = await getOrCreateDeviceId();
-        return loginWithKeys(username, deviceId, encryptionKey);
+        const authResult = await loginWithKeys(username, deviceId, encryptionKey);
+        await ensureKeysUploaded(authResult.user.id);
+        return authResult;
     }
 
     // 1. Generate & persist keys locally
@@ -76,16 +77,20 @@ export async function register(
         });
         userId = registerRes.data.data.id;
     } catch (err: unknown) {
-        // If user already exists (409), retrieve their ID and skip to login
+        // If the username is already taken (409), discard the freshly generated
+        // identity — it cannot match the server's stored public key.
         const status =
             typeof err === 'object' && err !== null && 'response' in err
                 ? (err as { response: { status: number } }).response?.status
                 : undefined;
         if (status === 409) {
-            console.info('[AUTH] User already registered on server — falling back to login.');
-            const deviceId = await getOrCreateDeviceId();
-            return loginWithKeys(username, deviceId, encryptionKey);
+            await cleanupLocalIdentity();
+            throw new Error(
+                'This username is already registered. Please log in from the original device or restore your identity keys.',
+            );
         }
+        // Any other failure: clean up the orphaned local identity
+        await cleanupLocalIdentity();
         throw err;
     }
 
@@ -100,21 +105,7 @@ export async function register(
     const authResult = await loginWithKeys(username, deviceId, encryptionKey);
 
     // 4. Upload signed pre-key (now authenticated)
-    await api.post('/keys/signed-pre-key', {
-        user_id: userId,
-        key_id: payload.signedPreKey.keyId,
-        public_key: payload.signedPreKey.publicKey,
-        signature: payload.signedPreKey.signature,
-    });
-
-    // 5. Upload one-time pre-keys (now authenticated)
-    await api.post('/keys/one-time-pre-keys', {
-        user_id: userId,
-        keys: payload.oneTimePreKeys.map((k) => ({
-            key_id: k.keyId,
-            public_key: k.publicKey,
-        })),
-    });
+    await uploadKeys(userId, payload);
 
     return authResult;
 }
@@ -134,6 +125,81 @@ export async function login(
 }
 
 // ─── Internal ──────────────────────────────────────────────────────────────────
+
+/** Upload signed pre-key and one-time pre-keys to the backend. */
+async function uploadKeys(
+    userId: string,
+    payload: Awaited<ReturnType<typeof generateRegistrationData>>,
+): Promise<void> {
+    await api.post('/keys/signed-pre-key', {
+        user_id: userId,
+        key_id: payload.signedPreKey.keyId,
+        public_key: payload.signedPreKey.publicKey,
+        signature: payload.signedPreKey.signature,
+    });
+
+    await api.post('/keys/one-time-pre-keys', {
+        user_id: userId,
+        keys: payload.oneTimePreKeys.map((k) => ({
+            key_id: k.keyId,
+            public_key: k.publicKey,
+        })),
+    });
+}
+
+/**
+ * After login, check the server's remaining one-time pre-key count
+ * (returned in the verify response) and re-upload from local Dexie
+ * if the server has none.  This handles the case where a previous
+ * registration succeeded but key upload was interrupted.
+ */
+async function ensureKeysUploaded(userId: string): Promise<void> {
+    // Signed pre-key: always re-upload the latest from Dexie
+    const signedPKs = await db.signedPreKeys.toArray();
+    if (signedPKs.length > 0) {
+        const spk = signedPKs[signedPKs.length - 1];
+        try {
+            await api.post('/keys/signed-pre-key', {
+                user_id: userId,
+                key_id: spk.keyId,
+                public_key: spk.publicKey,
+                signature: spk.signature,
+            });
+        } catch {
+            // Ignore — server may already have it
+        }
+    }
+
+    // One-time pre-keys: read all locally stored keys and upload
+    const preKeys = await db.preKeys.toArray();
+    if (preKeys.length > 0) {
+        try {
+            await api.post('/keys/one-time-pre-keys', {
+                user_id: userId,
+                keys: preKeys.map((k) => ({
+                    key_id: k.keyId,
+                    public_key: k.publicKey,
+                })),
+            });
+        } catch {
+            // Ignore — server may already have them
+        }
+    }
+}
+
+/**
+ * Remove the freshly generated local identity and associated keys
+ * so a subsequent register() call starts from a clean slate.
+ */
+async function cleanupLocalIdentity(): Promise<void> {
+    try {
+        await db.identity.delete('self');
+        await db.signedPreKeys.clear();
+        await db.preKeys.clear();
+    } catch (cleanupErr) {
+        console.warn('[AUTH] Failed to clean up temporary identity.', cleanupErr);
+    }
+}
 
 async function loginWithKeys(
     username: string,
@@ -166,17 +232,6 @@ async function loginWithKeys(
     const message = new TextEncoder().encode(nonce);
     const signature = nacl.sign.detached(message, privateKey);
     const signatureB64 = encodeBase64(signature);
-
-    // ── Diagnostic: verify locally before sending to backend ──
-    const localPub = decodeBase64(identity.publicKey);
-    const localValid = nacl.sign.detached.verify(message, signature, localPub);
-    if (!localValid) {
-        console.error('[AUTH] Local signature verification FAILED — private key may be corrupted');
-        console.error('[AUTH] privateKey.length:', privateKey.length);
-        console.error('[AUTH] publicKey (b64):', identity.publicKey);
-    } else {
-        console.info('[AUTH] Local signature verification passed');
-    }
 
     // 5. Send signature for verification
     const verifyRes = await api.post('/auth/verify', {

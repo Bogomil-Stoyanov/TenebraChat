@@ -83,11 +83,15 @@ export default function AuthScreen({ encryptionKey, onAuthenticated }: AuthScree
                 <form
                     onSubmit={(e) => {
                         e.preventDefault();
-                        // Default submit → register; login has its own button
+                        handleAction('register');
                     }}
                     className="flex flex-col gap-4"
                 >
+                    <label htmlFor="username-input" className="sr-only">
+                        Username
+                    </label>
                     <input
+                        id="username-input"
                         type="text"
                         placeholder="Username"
                         value={username}
@@ -108,9 +112,8 @@ export default function AuthScreen({ encryptionKey, onAuthenticated }: AuthScree
                     {/* Action buttons */}
                     <div className="mt-1 flex gap-3">
                         <button
-                            type="button"
+                            type="submit"
                             disabled={busy}
-                            onClick={() => handleAction('register')}
                             className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                             {busy ? (
