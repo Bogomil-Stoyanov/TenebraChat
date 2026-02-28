@@ -22,7 +22,11 @@ router.post(
       const filename = (req.headers['x-filename'] as string) || 'encrypted.bin';
       const objectName = `${Date.now()}-${filename}`;
 
-      const storedName = await minioService.uploadFileWithName(objectName, body, 'application/octet-stream');
+      const storedName = await minioService.uploadFileWithName(
+        objectName,
+        body,
+        'application/octet-stream'
+      );
 
       const response: ApiResponse<{ object_name: string }> = {
         success: true,
@@ -34,7 +38,7 @@ router.post(
       const response: ApiResponse = { success: false, error: 'Internal server error' };
       return res.status(500).json(response);
     }
-  },
+  }
 );
 
 // ─── Direct download (MinIO → backend → client) ──────────────────────────────
