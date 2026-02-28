@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Lock, KeyRound, ShieldCheck, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Lock, KeyRound, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { db } from './db/db';
 import { deriveKey, decrypt, encrypt, generateSalt } from './services/SecurityService';
 import AuthScreen from './components/AuthScreen';
+import ChatScreen from './components/ChatScreen';
 import type { AuthResult } from './services/AuthService';
 
 type Screen = 'loading' | 'setup' | 'unlock' | 'auth' | 'authenticated';
@@ -163,14 +164,10 @@ function App() {
 
   if (screen === 'authenticated') {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-gray-950">
-        <ShieldCheck className="h-16 w-16 text-emerald-400" />
-        <h1 className="text-2xl font-semibold text-gray-100">Authenticated</h1>
-        <p className="text-sm text-gray-400">
-          Logged in as <span className="font-medium text-gray-200">{authResult?.user.username}</span>.
-          Next stages will render the chat UI here.
-        </p>
-      </div>
+      <ChatScreen
+        user={authResult!.user}
+        encryptionKey={encryptionKey!}
+      />
     );
   }
 

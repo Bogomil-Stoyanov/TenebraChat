@@ -58,6 +58,28 @@ export interface Meta {
   value: string;
 }
 
+/** Known contact (remote peer). */
+export interface Contact {
+  /** Remote user's UUID (primary key). */
+  userId: string;
+  /** Display username. */
+  username: string;
+}
+
+/** Persisted chat message. */
+export interface Message {
+  /** Message UUID (primary key). */
+  id: string;
+  /** Remote user's UUID (indexed for conversation queries). */
+  contactId: string;
+  /** Decrypted plaintext. */
+  text: string;
+  /** 'in' = received, 'out' = sent. */
+  direction: 'in' | 'out';
+  /** Unix epoch milliseconds. */
+  timestamp: number;
+}
+
 // ─── Database ──────────────────────────────────────────────────────────────────
 
 class TenebraDB extends Dexie {
@@ -66,6 +88,8 @@ class TenebraDB extends Dexie {
   signedPreKeys!: Table<SignedPreKey, number>;
   sessions!: Table<Session, string>;
   meta!: Table<Meta, string>;
+  contacts!: Table<Contact, string>;
+  messages!: Table<Message, string>;
 
   constructor() {
     super('tenebra');
@@ -76,6 +100,16 @@ class TenebraDB extends Dexie {
       signedPreKeys: 'keyId',
       sessions: 'id',
       meta: 'key',
+    });
+
+    this.version(2).stores({
+      identity: 'id',
+      preKeys: 'keyId',
+      signedPreKeys: 'keyId',
+      sessions: 'id',
+      meta: 'key',
+      contacts: 'userId',
+      messages: 'id, contactId, timestamp',
     });
   }
 }
