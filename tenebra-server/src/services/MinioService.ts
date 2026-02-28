@@ -35,6 +35,9 @@ class MinioService {
     contentType: string,
     metadata?: Record<string, string>
   ): Promise<string> {
+    if (!Buffer.isBuffer(buffer)) {
+      throw new TypeError('uploadFile expects a Buffer');
+    }
     const fileId = uuidv4();
     const objectName = `${fileId}`;
 
@@ -55,6 +58,9 @@ class MinioService {
     contentType: string,
     metadata?: Record<string, string>
   ): Promise<string> {
+    if (!Buffer.isBuffer(buffer)) {
+      throw new TypeError('uploadFileWithName expects a Buffer');
+    }
     await this.client.putObject(this.bucket, objectName, buffer, buffer.length, {
       'Content-Type': contentType,
       ...metadata,
