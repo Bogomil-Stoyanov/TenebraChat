@@ -25,9 +25,7 @@ router.post(
         return res.status(400).json(response);
       }
 
-      const filename = sanitizeFilename(
-        (req.headers['x-filename'] as string) || 'encrypted.bin',
-      );
+      const filename = sanitizeFilename((req.headers['x-filename'] as string) || 'encrypted.bin');
       const objectName = `${Date.now()}-${randomUUID()}-${filename}`;
 
       const storedName = await minioService.uploadFileWithName(
