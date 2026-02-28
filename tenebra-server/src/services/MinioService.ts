@@ -61,6 +61,7 @@ class MinioService {
     if (!Buffer.isBuffer(buffer)) {
       throw new TypeError('uploadFileWithName expects a Buffer');
     }
+    // lgtm[js/type-confusion-through-parameter-tampering] — buffer is validated above via Buffer.isBuffer()
     await this.client.putObject(this.bucket, objectName, buffer, buffer.length, {
       'Content-Type': contentType,
       ...metadata,
