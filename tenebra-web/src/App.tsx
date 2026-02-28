@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Lock, KeyRound, ShieldCheck, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { db } from './db/db';
 import { deriveKey, decrypt, encrypt, generateSalt } from './services/SecurityService';
 
 type Screen = 'loading' | 'setup' | 'unlock' | 'unlocked';
+
+const MIN_PASSWORD_LENGTH = 12;
+const MAX_UNLOCK_ATTEMPTS = 10;
+const LOCKOUT_DURATION_MS = 60_000;
 
 function App() {
   const [screen, setScreen] = useState<Screen>('loading');
@@ -13,12 +17,16 @@ function App() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // ── On mount: decide if the DB already has an identity ──────────────────────
+  // Track failed unlock attempts to throttle brute-force
+  const failedAttempts = useRef(0);
+  const lockoutUntil = useRef(0);
+
+  // ── On mount: check if a vault has been set up via the meta table ───────────
   useEffect(() => {
     (async () => {
       try {
-        const identity = await db.identity.get('self');
-        setScreen(identity ? 'unlock' : 'setup');
+        const setupFlag = await db.meta.get('vault_initialized');
+        setScreen(setupFlag ? 'unlock' : 'setup');
       } catch {
         setScreen('setup');
       }
@@ -29,8 +37,8 @@ function App() {
   const handleSetup = useCallback(async () => {
     setError('');
 
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.');
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
       return;
     }
     if (password !== confirmPassword) {
@@ -47,20 +55,12 @@ function App() {
       const verificationToken = 'tenebra-verified';
       const { cipherText, iv } = await encrypt(verificationToken, key);
 
-      // Persist the salt and verification ciphertext in the meta table.
+      // Persist the salt, verification ciphertext, and setup flag in the meta table.
       await db.meta.bulkPut([
         { key: 'salt', value: salt },
         { key: 'verification', value: JSON.stringify({ cipherText, iv }) },
+        { key: 'vault_initialized', value: 'true' },
       ]);
-
-      // Store a placeholder identity row so subsequent loads show "unlock".
-      await db.identity.put({
-        id: 'self',
-        registrationId: 0,
-        publicKey: '',
-        encryptedPrivateKey: '',
-        encryptedPrivateKeyIv: '',
-      });
 
       setScreen('unlocked');
     } catch (err) {
@@ -73,6 +73,14 @@ function App() {
   // ── Unlock: verify the password against the stored marker ────────────────────
   const handleUnlock = useCallback(async () => {
     setError('');
+
+    // Enforce lockout after too many failed attempts
+    if (Date.now() < lockoutUntil.current) {
+      const secondsLeft = Math.ceil((lockoutUntil.current - Date.now()) / 1000);
+      setError(`Too many failed attempts. Try again in ${secondsLeft}s.`);
+      return;
+    }
+
     setBusy(true);
 
     try {
@@ -91,13 +99,32 @@ function App() {
       const result = await decrypt(cipherText, iv, key);
 
       if (result !== 'tenebra-verified') {
-        setError('Incorrect password.');
+        failedAttempts.current++;
+        if (failedAttempts.current >= MAX_UNLOCK_ATTEMPTS) {
+          lockoutUntil.current = Date.now() + LOCKOUT_DURATION_MS;
+          failedAttempts.current = 0;
+          setError('Too many failed attempts. Locked for 60 seconds.');
+        } else {
+          setError('Incorrect password.');
+        }
         return;
       }
 
+      failedAttempts.current = 0;
       setScreen('unlocked');
-    } catch {
-      setError('Incorrect password.');
+    } catch (err) {
+      // AES-GCM throws OperationError for wrong key; anything else is unexpected
+      failedAttempts.current++;
+      if (failedAttempts.current >= MAX_UNLOCK_ATTEMPTS) {
+        lockoutUntil.current = Date.now() + LOCKOUT_DURATION_MS;
+        failedAttempts.current = 0;
+        setError('Too many failed attempts. Locked for 60 seconds.');
+      } else if (err instanceof DOMException && err.name === 'OperationError') {
+        setError('Incorrect password.');
+      } else {
+        console.error('Unexpected unlock error:', err);
+        setError('Decryption failed. Your database may be corrupted.');
+      }
     } finally {
       setBusy(false);
     }

@@ -1,50 +1,61 @@
-# React + TypeScript + Vite
+# Tenebra Web Client
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The browser-based frontend for the Tenebra secure messaging platform.
 
-Currently, two official plugins are available:
+## Tech Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+| Layer         | Technology                            |
+| ------------- | ------------------------------------- |
+| Framework     | React 18 + TypeScript 5               |
+| Build         | Vite 5                                |
+| Styling       | Tailwind CSS v4                       |
+| Local Storage | Dexie (IndexedDB)                     |
+| Encryption    | Web Crypto API (PBKDF2 + AES-GCM-256) |
+| Icons         | Lucide React                          |
 
-## Expanding the ESLint configuration
+## Security Architecture
 
-If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:
+All sensitive material (private keys, session state) is encrypted at rest inside the browser's IndexedDB using:
 
-- Configure the top-level `parserOptions` property like this:
+- **PBKDF2** (SHA-256, 600 000 iterations) to derive a 256-bit key from the user's local password.
+- **AES-GCM** (256-bit, random 12-byte IV) to encrypt / decrypt payloads.
+- A verification token stored alongside the salt lets the app confirm a correct password without exposing key material.
 
-```js
-export default tseslint.config({
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+> **Note:** The local password never leaves the browser — it is not sent to the backend.
+
+## Getting Started
+
+```bash
+# Install dependencies
+npm install
+
+# Start the dev server (proxies /api to the backend on port 3000)
+npm run dev
+
+# Override the backend URL if needed
+VITE_API_URL=http://192.168.1.10:3000 npm run dev
 ```
 
-- Replace `tseslint.configs.recommended` to `tseslint.configs.recommendedTypeChecked` or `tseslint.configs.strictTypeChecked`
-- Optionally add `...tseslint.configs.stylisticTypeChecked`
-- Install [eslint-plugin-react](https://github.com/jsx-eslint/eslint-plugin-react) and update the config:
+## Available Scripts
 
-```js
-// eslint.config.js
-import react from 'eslint-plugin-react'
+| Script            | Description                          |
+| ----------------- | ------------------------------------ |
+| `npm run dev`     | Start Vite dev server with HMR       |
+| `npm run build`   | Type-check and build for production  |
+| `npm run preview` | Preview the production build locally |
+| `npm run lint`    | Run ESLint                           |
 
-export default tseslint.config({
-  // Set the react version
-  settings: { react: { version: '18.3' } },
-  plugins: {
-    // Add the react plugin
-    react,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended rules
-    ...react.configs.recommended.rules,
-    ...react.configs['jsx-runtime'].rules,
-  },
-})
+## Project Structure
+
 ```
+src/
+├── db/              # Dexie database schema & encrypted tables
+├── services/        # SecurityService (PBKDF2 + AES-GCM)
+├── App.tsx          # Root component (unlock / setup screen)
+├── main.tsx         # Vite entry point
+└── index.css        # Tailwind imports
+```
+
+## Backend Integration
+
+During development, Vite proxies `/api` and `/socket.io` requests to the backend (`tenebra-server`). The target defaults to `http://localhost:3000` and can be overridden with the `VITE_API_URL` environment variable.

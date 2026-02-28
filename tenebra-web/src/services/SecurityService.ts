@@ -2,13 +2,13 @@
  * SecurityService — Local encryption layer for Tenebra Web.
  *
  * Uses the Web Crypto API exclusively:
- *   • PBKDF2  (SHA-256, 100 000 iterations) to derive a CryptoKey from a password + salt.
+ *   • PBKDF2  (SHA-256, 600 000 iterations) to derive a CryptoKey from a password + salt.
  *   • AES-GCM (256-bit) to encrypt / decrypt arbitrary UTF-8 strings.
  *
  * All outputs are Base64-encoded for safe storage in IndexedDB.
  */
 
-const PBKDF2_ITERATIONS = 100_000;
+const PBKDF2_ITERATIONS = 600_000;
 const PBKDF2_HASH = 'SHA-256';
 const AES_ALGORITHM = 'AES-GCM';
 const AES_KEY_LENGTH = 256;

@@ -2,11 +2,11 @@
 . "$(dirname "$0")/_/husky.sh"
 
 echo "🔍 Running server ESLint..."
-cd tenebra-server && npm run lint && cd ..
+(cd tenebra-server && npm run lint)
 
 echo ""
 echo "🔍 Running web lint..."
-cd tenebra-web && npm run lint && cd ..
+(cd tenebra-web && npm run lint)
 
 echo ""
 echo "Running Semgrep security checks..."

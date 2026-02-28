@@ -14,14 +14,15 @@ export default defineConfig({
   },
 
   server: {
-    // Proxy API calls to the backend during development
+    // Proxy API calls to the backend during development.
+    // Override via VITE_API_URL env var (e.g. VITE_API_URL=http://192.168.1.10:3000).
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: process.env.VITE_API_URL || 'http://localhost:3000',
         changeOrigin: true,
       },
       '/socket.io': {
-        target: 'http://localhost:3000',
+        target: process.env.VITE_API_URL || 'http://localhost:3000',
         ws: true,
       },
     },

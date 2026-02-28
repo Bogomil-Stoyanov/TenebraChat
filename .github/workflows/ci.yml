@@ -22,6 +22,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20.x
+          cache: 'npm'
+          cache-dependency-path: |
+            tenebra-server/package-lock.json
+            tenebra-web/package-lock.json
 
       - name: Install server dependencies
         working-directory: tenebra-server
@@ -61,6 +65,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20.x
+          cache: 'npm'
+          cache-dependency-path: |
+            tenebra-server/package-lock.json
+            tenebra-web/package-lock.json
 
       - name: Install server dependencies
         working-directory: tenebra-server
