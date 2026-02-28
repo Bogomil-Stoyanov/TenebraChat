@@ -52,7 +52,7 @@ app.use(
         formAction: ["'self'"],
       },
     },
-  }),
+  })
 );
 app.use(cors());
 
