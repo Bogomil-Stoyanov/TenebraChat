@@ -1,12 +1,12 @@
 #!/bin/sh
 . "$(dirname "$0")/_/husky.sh"
 
-echo "🔍 Running ESLint..."
-npm run lint
+echo "🔍 Running server ESLint..."
+(cd tenebra-server && npm run lint)
 
 echo ""
-echo "🔍 Running lint-staged..."
-npx lint-staged
+echo "🔍 Running web lint..."
+(cd tenebra-web && npm run lint)
 
 echo ""
 echo "Running Semgrep security checks..."
@@ -16,6 +16,8 @@ if command -v semgrep >/dev/null 2>&1; then
     --config=p/secrets \
     --config=p/owasp-top-ten \
     --config=p/nodejs \
+    --config=p/react \
+    --config=p/typescript \
     --error \
     --quiet \
     || {

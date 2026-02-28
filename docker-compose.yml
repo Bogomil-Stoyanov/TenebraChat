@@ -4,7 +4,7 @@ services:
   # Tenebra Chat Server
   app:
     build:
-      context: .
+      context: ./tenebra-server
       dockerfile: Dockerfile
     container_name: tenebra-app
     restart: unless-stopped

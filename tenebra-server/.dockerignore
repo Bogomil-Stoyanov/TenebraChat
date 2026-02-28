@@ -1,6 +1,5 @@
 node_modules
 dist
-tenebra-web
 .git
 .gitignore
 .env
