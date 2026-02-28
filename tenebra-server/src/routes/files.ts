@@ -1,7 +1,13 @@
 import { Router, Request, Response } from 'express';
 import express from 'express';
+import { randomUUID } from 'crypto';
 import { minioService } from '../services/MinioService';
 import { ApiResponse } from '../types';
+
+/** Strip path separators and control characters from user-supplied filenames. */
+function sanitizeFilename(raw: string): string {
+  return raw.replace(/[\/\\\x00-\x1f]/g, '_').slice(0, 255);
+}
 
 const router = Router();
 
@@ -19,8 +25,10 @@ router.post(
         return res.status(400).json(response);
       }
 
-      const filename = (req.headers['x-filename'] as string) || 'encrypted.bin';
-      const objectName = `${Date.now()}-${filename}`;
+      const filename = sanitizeFilename(
+        (req.headers['x-filename'] as string) || 'encrypted.bin',
+      );
+      const objectName = `${Date.now()}-${randomUUID()}-${filename}`;
 
       const storedName = await minioService.uploadFileWithName(
         objectName,
@@ -78,7 +86,7 @@ router.post('/upload-url', async (req: Request, res: Response) => {
       return res.status(400).json(response);
     }
 
-    const objectName = `${Date.now()}-${filename}`;
+    const objectName = `${Date.now()}-${randomUUID()}-${sanitizeFilename(filename)}`;
     const url = await minioService.getPresignedUploadUrl(objectName, expiry);
 
     const response: ApiResponse<{ url: string; object_name: string; expires_in: number }> = {

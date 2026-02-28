@@ -157,7 +157,19 @@ function openMessage(sealed: string, sessionKey: Uint8Array): InnerPayload {
     const box = data.slice(nacl.secretbox.nonceLength);
     const plain = nacl.secretbox.open(box, nonce, sessionKey);
     if (!plain) throw new Error('Decryption failed — invalid session key or corrupted message.');
-    return JSON.parse(encodeUTF8(plain)) as InnerPayload;
+
+    const decoded = encodeUTF8(plain);
+    try {
+        const parsed = JSON.parse(decoded);
+        if (parsed && typeof parsed === 'object' && typeof parsed.text === 'string') {
+            return parsed as InnerPayload;
+        }
+        // Parsed JSON but not in the expected shape — treat as legacy plaintext.
+        return { text: decoded } as InnerPayload;
+    } catch {
+        // Non-JSON legacy payload — wrap as plaintext.
+        return { text: decoded } as InnerPayload;
+    }
 }
 
 /**
@@ -513,7 +525,7 @@ export async function processIncomingMessage(
                 /* already removed */
             });
         }
-    } else {
+    } else if (type === 'signal_message') {
         // Regular signal_message — use existing session
         const session = await loadSession(senderId, encryptionKey);
         if (!session) {
@@ -524,6 +536,8 @@ export async function processIncomingMessage(
         const envelope = base64ToEnvelope<SignalEnvelope>(ciphertextB64);
         const sessionKey = decodeBase64(session.sessionKey);
         payload = openMessage(envelope.ciphertext, sessionKey);
+    } else {
+        throw new Error(`Unknown message type: ${type}`);
     }
 
     // Persist the message locally (encrypted at rest)

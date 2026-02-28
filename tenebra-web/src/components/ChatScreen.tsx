@@ -86,6 +86,7 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
     const [pendingFile, setPendingFile] = useState<File | null>(null);
     /** objectURL cache for decrypted image attachments, keyed by message ID. */
     const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
+    const imageUrlsRef = useRef(imageUrls);
 
     // Lightbox state
     const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
@@ -314,12 +315,16 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
         }
     }, [messages, imageUrls, decryptAndCacheImage]);
 
+    // Keep the ref in sync so the unmount cleanup revokes the latest URLs
+    useEffect(() => {
+        imageUrlsRef.current = imageUrls;
+    }, [imageUrls]);
+
     // Revoke object URLs on unmount
     useEffect(() => {
         return () => {
-            Object.values(imageUrls).forEach(URL.revokeObjectURL);
+            Object.values(imageUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // ── Download non-image attachment ───────────────────────────────────────
@@ -572,7 +577,7 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
                                         )}
                                     </div>
                                 )}
-                                {msg.text && <p className="wrap-break-word">{msg.text}</p>}
+                                {msg.text && <p className="break-words">{msg.text}</p>}
                                 <p
                                     className={`mt-1 text-[10px] ${msg.direction === 'out'
                                         ? 'text-indigo-200/70'
