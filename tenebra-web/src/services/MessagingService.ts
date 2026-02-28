@@ -80,6 +80,12 @@ const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
  */
 const SESSION_MAX_MESSAGES = 500;
 
+/**
+ * Maximum number of skipped chain steps allowed when a message arrives
+ * out of order. Limits CPU cost and prevents abuse.
+ */
+const MAX_SKIP_KEYS = 50;
+
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 /** PreKeyBundle returned by the backend. */
@@ -112,6 +118,8 @@ interface PreKeySignalEnvelope {
 /** Wire envelope for a regular (post-handshake) message. */
 interface SignalEnvelope {
     ciphertext: string;     // Base64(nonce ‖ secretbox output)
+    /** Monotonic chain index so the receiver can derive the correct key. */
+    chainIndex: number;
 }
 
 // ─── Inner payload ─────────────────────────────────────────────────────────────
@@ -520,7 +528,10 @@ export async function sendFirstMessage(
 
     // 6. Encrypt the plaintext with the per-message key
     const identityRow = await db.meta.get('user_id');
-    const myId = identityRow?.value ?? '';
+    if (!identityRow || typeof identityRow.value !== 'string' || !identityRow.value) {
+        throw new Error('Cannot send message: missing local user identity (user_id).');
+    }
+    const myId = identityRow.value;
 
     const innerPayload: InnerPayload = {
         text: plaintext,
@@ -589,7 +600,10 @@ export async function sendMessage(
 
     // Build identity-bound payload
     const identityRow = await db.meta.get('user_id');
-    const myId = identityRow?.value ?? '';
+    if (!identityRow || typeof identityRow.value !== 'string' || !identityRow.value) {
+        throw new Error('Cannot send message: missing local user identity (user_id).');
+    }
+    const myId = identityRow.value;
 
     const innerPayload: InnerPayload = {
         text: plaintext,
@@ -600,7 +614,10 @@ export async function sendMessage(
     };
     const sealed = sealMessage(innerPayload, messageKey);
 
-    const envelope: SignalEnvelope = { ciphertext: sealed };
+    const envelope: SignalEnvelope = {
+        ciphertext: sealed,
+        chainIndex: session.sendMessageCount,
+    };
 
     await api.post('/messages/send', {
         recipientId: contactUserId,
@@ -730,24 +747,51 @@ export async function processIncomingMessage(
         }
         const envelope = base64ToEnvelope<SignalEnvelope>(ciphertextB64);
 
-        // Advance the receive chain ratchet
+        // Advance the receive chain ratchet (with skipped-key window)
         if (!session.recvChainKey) {
             throw new Error(
                 `Session for sender ${senderId} is missing chain ratchet state. ` +
                 'A new key exchange is required.',
             );
         }
-        const currentRecvChain = decodeBase64(session.recvChainKey);
+
+        const targetIndex = envelope.chainIndex ?? session.recvMessageCount;
+        const currentIndex = session.recvMessageCount;
+
+        if (targetIndex < currentIndex) {
+            throw new Error(
+                `Out-of-order message (index ${targetIndex} < ${currentIndex}). ` +
+                'Cannot derive past keys — message is unrecoverable.',
+            );
+        }
+
+        // Fast-forward the chain to the target index, discarding
+        // intermediate message keys (skipped messages are lost).
+        const gap = targetIndex - currentIndex;
+        if (gap > MAX_SKIP_KEYS) {
+            throw new Error(
+                `Message gap too large (${gap} > ${MAX_SKIP_KEYS}). ` +
+                'Possible attack or severe message loss — re-key required.',
+            );
+        }
+
+        let chainKey = decodeBase64(session.recvChainKey);
+        for (let i = 0; i < gap; i++) {
+            const stepped = await advanceChainKey(chainKey, CHAIN_RATCHET_INFO);
+            chainKey = stepped.nextChainKey;
+        }
+
+        // Derive the actual message key for this index
         const { messageKey, nextChainKey } = await advanceChainKey(
-            currentRecvChain,
+            chainKey,
             CHAIN_RATCHET_INFO,
         );
 
         payload = openMessage(envelope.ciphertext, messageKey);
 
-        // Update session: advance recv chain, increment counter
+        // Update session: advance recv chain past the target index
         session.recvChainKey = encodeBase64(nextChainKey);
-        session.recvMessageCount += 1;
+        session.recvMessageCount = targetIndex + 1;
         await storeSession(senderId, session, encryptionKey);
     } else {
         throw new Error(`Unknown message type: ${type}`);
