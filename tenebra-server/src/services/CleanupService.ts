@@ -1,8 +1,12 @@
 import cron, { ScheduledTask } from 'node-cron';
 import { AuthChallenge, QueuedMessage } from '../models';
+import knex from '../database/connection';
 
 /** Number of days after which queued messages are considered stale. */
 const MESSAGE_RETENTION_DAYS = 30;
+
+/** Number of days after which seen-message hashes are purged. */
+const HASH_RETENTION_DAYS = 7;
 
 /**
  * Centralized cleanup service that schedules periodic maintenance tasks
@@ -71,9 +75,33 @@ export class CleanupService {
       )
     );
 
+    // Job 3: Purge old seen-message hashes daily at 03:15 UTC
+    this.tasks.push(
+      cron.schedule(
+        '15 3 * * *',
+        async () => {
+          try {
+            const cutoff = new Date();
+            cutoff.setDate(cutoff.getDate() - HASH_RETENTION_DAYS);
+            const deleted = await knex('seen_message_hashes')
+              .where('created_at', '<', cutoff)
+              .delete();
+            if (deleted > 0) {
+              console.log(
+                `[CleanupService] Purged ${deleted} seen-message hash(es) older than ${HASH_RETENTION_DAYS}d`
+              );
+            }
+          } catch (error) {
+            console.error('[CleanupService] Failed to purge seen-message hashes:', error);
+          }
+        },
+        { timezone: 'UTC' }
+      )
+    );
+
     this.started = true;
     console.log(
-      'CleanupService started (auth challenges: every 10 min, stale messages: daily 03:00 UTC)'
+      'CleanupService started (auth challenges: every 10 min, stale messages: daily 03:00 UTC, hash cleanup: daily 03:15 UTC)'
     );
   }
 

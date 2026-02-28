@@ -37,12 +37,22 @@ export interface DecryptedSignedPreKey extends DecryptedPreKey {
 }
 
 export interface SessionData {
-    /** 32-byte symmetric session key derived from X3DH. */
+    /** 32-byte root session key derived from X3DH. */
     sessionKey: string; // Base64
     /** Base64-encoded Ed25519 identity public key of the remote peer. */
     remoteIdentityKey: string;
     /** Remote peer's Signal registration ID. */
     remoteRegistrationId: number;
+    /** Current sending chain key (Base64). Advanced after every outgoing message. */
+    sendChainKey: string;
+    /** Current receiving chain key (Base64). Advanced after every incoming message. */
+    recvChainKey: string;
+    /** Number of messages sent on this session (for rotation limits). */
+    sendMessageCount: number;
+    /** Number of messages received on this session (for rotation limits). */
+    recvMessageCount: number;
+    /** Unix epoch ms when this session was created. */
+    createdAt: number;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
