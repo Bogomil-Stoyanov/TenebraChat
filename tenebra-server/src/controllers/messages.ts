@@ -1,8 +1,10 @@
 import { Response } from 'express';
+import { createHash } from 'crypto';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { QueuedMessage, Device } from '../models';
 import { ApiResponse } from '../types';
 import { getIO } from '../socket';
+import knex from '../database/connection';
 
 /** Maximum ciphertext size: 64 KB base64 ≈ ~48 KB raw. */
 const MAX_CIPHERTEXT_LENGTH = 65_536;
@@ -101,6 +103,23 @@ export async function sendMessage(req: AuthenticatedRequest, res: Response): Pro
 
     const { recipientId, ciphertext, type } = result;
     const senderId = req.user.userId;
+
+    // ── Server-side replay protection ──────────────────────────────────
+    // Compute SHA-256 of the ciphertext and reject if already seen.
+    const hash = createHash('sha256').update(ciphertext).digest('hex');
+    try {
+      await knex('seen_message_hashes').insert({ hash });
+    } catch (err: any) {
+      // Unique-constraint violation → duplicate ciphertext
+      if (err.code === '23505' || err.constraint || /unique/i.test(err.message)) {
+        res.status(409).json({
+          success: false,
+          error: 'Duplicate message rejected (replay protection)',
+        } as ApiResponse);
+        return;
+      }
+      throw err; // unexpected error → re-throw
+    }
 
     // Prevent sending messages to yourself
     if (recipientId === senderId) {
