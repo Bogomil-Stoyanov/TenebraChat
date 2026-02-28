@@ -55,13 +55,27 @@ export async function register(
     encryptionKey: CryptoKey,
 ): Promise<AuthResult> {
     // If local keys already exist (e.g. previous registration succeeded but
-    // key upload or auto-login failed), log in and ensure keys are uploaded.
+    // key upload or auto-login failed), try to resume — but only if the
+    // stored username matches and the backend still knows the user.
     const existingIdentity = await db.identity.get('self');
     if (existingIdentity) {
-        const deviceId = await getOrCreateDeviceId();
-        const authResult = await loginWithKeys(username, deviceId, encryptionKey);
-        await ensureKeysUploaded(authResult.user.id);
-        return authResult;
+        const storedUsername = await db.meta.get('username');
+        if (storedUsername?.value === username) {
+            try {
+                const deviceId = await getOrCreateDeviceId();
+                const authResult = await loginWithKeys(username, deviceId, encryptionKey);
+                await ensureKeysUploaded(authResult.user.id);
+                return authResult;
+            } catch {
+                // Login failed — the backend may have been reset or the
+                // user no longer exists.  Clean up stale keys and fall
+                // through to a fresh registration.
+                await cleanupLocalIdentity();
+            }
+        } else {
+            // Different username — discard stale keys from a prior account.
+            await cleanupLocalIdentity();
+        }
     }
 
     // 1. Generate & persist keys locally
@@ -114,12 +128,24 @@ export async function register(
  * Log in with an existing identity by proving ownership of the Ed25519
  * private key via a challenge-response signature.
  *
+ * Requires the local identity private key in IndexedDB.  If it has been
+ * deleted (e.g. browser data cleared), login is impossible — the user
+ * must register a new account.
+ *
  * @returns user info, JWT, and device ID on success.
  */
 export async function login(
     username: string,
     encryptionKey: CryptoKey,
 ): Promise<AuthResult> {
+    const existingIdentity = await db.identity.get('self');
+    if (!existingIdentity) {
+        throw new Error(
+            'No local identity keys found. If you cleared browser data, ' +
+            'the private key is permanently lost. Please register a new account.',
+        );
+    }
+
     const deviceId = await getOrCreateDeviceId();
     return loginWithKeys(username, deviceId, encryptionKey);
 }

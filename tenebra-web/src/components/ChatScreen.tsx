@@ -22,7 +22,7 @@ import {
     X,
 } from 'lucide-react';
 import { db } from '@/db/db';
-import type { Contact, Message } from '@/db/db';
+import type { Contact, DecryptedMessage } from '@/db/db';
 import {
     sendMessage,
     processIncomingMessage,
@@ -53,7 +53,7 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
     // ── State ────────────────────────────────────────────────────────────────
     const [contacts, setContacts] = useState<Contact[]>([]);
     const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
-    const [messages, setMessages] = useState<Message[]>([]);
+    const [messages, setMessages] = useState<DecryptedMessage[]>([]);
     const [inputText, setInputText] = useState('');
     const [sending, setSending] = useState(false);
     const [error, setError] = useState('');
@@ -176,7 +176,7 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
 
                 // Update current conversation if applicable
                 if (selectedContact) {
-                    const updated = await loadMessages(selectedContact.userId);
+                    const updated = await loadMessages(selectedContact.userId, encryptionKey);
                     setMessages(updated);
                 }
             } catch (err) {
@@ -198,8 +198,8 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
             setMessages([]);
             return;
         }
-        loadMessages(selectedContact.userId).then(setMessages);
-    }, [selectedContact]);
+        loadMessages(selectedContact.userId, encryptionKey).then(setMessages);
+    }, [selectedContact, encryptionKey]);
 
     // ── Auto-scroll to bottom ────────────────────────────────────────────────
     useEffect(() => {
@@ -291,8 +291,8 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
                             key={c.userId}
                             onClick={() => setSelectedContact(c)}
                             className={`flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-gray-800/60 ${selectedContact?.userId === c.userId
-                                    ? 'bg-gray-800/80'
-                                    : ''
+                                ? 'bg-gray-800/80'
+                                : ''
                                 }`}
                         >
                             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-sm font-medium text-indigo-300">
@@ -345,15 +345,15 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
                         >
                             <div
                                 className={`max-w-[70%] rounded-2xl px-4 py-2 text-sm ${msg.direction === 'out'
-                                        ? 'bg-indigo-600 text-white'
-                                        : 'bg-gray-800 text-gray-100'
+                                    ? 'bg-indigo-600 text-white'
+                                    : 'bg-gray-800 text-gray-100'
                                     }`}
                             >
                                 <p className="wrap-break-word">{msg.text}</p>
                                 <p
                                     className={`mt-1 text-[10px] ${msg.direction === 'out'
-                                            ? 'text-indigo-200/70'
-                                            : 'text-gray-500'
+                                        ? 'text-indigo-200/70'
+                                        : 'text-gray-500'
                                         }`}
                                 >
                                     {new Date(msg.timestamp).toLocaleTimeString([], {

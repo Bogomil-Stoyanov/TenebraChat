@@ -29,7 +29,8 @@ import { v4 as uuidv4 } from 'uuid';
 
 import api from '@/api/client';
 import { db } from '@/db/db';
-import type { Message } from '@/db/db';
+import type { Message, DecryptedMessage } from '@/db/db';
+import { encrypt, decrypt } from './SecurityService';
 import {
     getIdentityKeyPair,
     getSignedPreKey,
@@ -244,6 +245,45 @@ async function x3dhResponder(
     return hkdf(km, HKDF_SALT, HKDF_INFO, 32);
 }
 
+// ─── Local storage helpers ─────────────────────────────────────────────────────
+
+/** Encrypt plaintext and persist as a Message in IndexedDB. */
+async function persistMessage(
+    id: string,
+    contactId: string,
+    plaintext: string,
+    direction: 'in' | 'out',
+    timestamp: number,
+    encryptionKey: CryptoKey,
+): Promise<DecryptedMessage> {
+    const { cipherText, iv } = await encrypt(plaintext, encryptionKey);
+    const row: Message = {
+        id,
+        contactId,
+        encryptedText: cipherText,
+        encryptedTextIv: iv,
+        direction,
+        timestamp,
+    };
+    await db.messages.add(row);
+    return { id, contactId, text: plaintext, direction, timestamp };
+}
+
+/** Decrypt a stored Message row into a DecryptedMessage. */
+async function decryptMessageRow(
+    row: Message,
+    encryptionKey: CryptoKey,
+): Promise<DecryptedMessage> {
+    const text = await decrypt(row.encryptedText, row.encryptedTextIv, encryptionKey);
+    return {
+        id: row.id,
+        contactId: row.contactId,
+        text,
+        direction: row.direction,
+        timestamp: row.timestamp,
+    };
+}
+
 // ─── Public API ────────────────────────────────────────────────────────────────
 
 /**
@@ -270,13 +310,13 @@ export async function resolveUserId(
  * Establish an X3DH session with a remote user and send the first
  * encrypted message as a `pre_key_signal_message`.
  *
- * @returns The saved {@link Message} that was persisted locally.
+ * @returns The saved {@link DecryptedMessage} that was persisted locally.
  */
 export async function sendFirstMessage(
     contactUserId: string,
     plaintext: string,
     encryptionKey: CryptoKey,
-): Promise<Message> {
+): Promise<DecryptedMessage> {
     // 1. Fetch remote key bundle
     const bundleRes = await api.get(`/keys/bundle/${contactUserId}`);
     const bundle: PreKeyBundle = bundleRes.data.data;
@@ -332,16 +372,8 @@ export async function sendFirstMessage(
     };
     await storeSession(contactUserId, sessionData, encryptionKey);
 
-    // 9. Persist local message
-    const msg: Message = {
-        id: uuidv4(),
-        contactId: contactUserId,
-        text: plaintext,
-        direction: 'out',
-        timestamp: Date.now(),
-    };
-    await db.messages.add(msg);
-    return msg;
+    // 9. Persist local message (encrypted at rest)
+    return persistMessage(uuidv4(), contactUserId, plaintext, 'out', Date.now(), encryptionKey);
 }
 
 /**
@@ -351,7 +383,7 @@ export async function sendMessage(
     contactUserId: string,
     plaintext: string,
     encryptionKey: CryptoKey,
-): Promise<Message> {
+): Promise<DecryptedMessage> {
     const session = await loadSession(contactUserId, encryptionKey);
     if (!session) {
         // No session yet — establish one
@@ -369,21 +401,13 @@ export async function sendMessage(
         type: 'signal_message',
     });
 
-    const msg: Message = {
-        id: uuidv4(),
-        contactId: contactUserId,
-        text: plaintext,
-        direction: 'out',
-        timestamp: Date.now(),
-    };
-    await db.messages.add(msg);
-    return msg;
+    return persistMessage(uuidv4(), contactUserId, plaintext, 'out', Date.now(), encryptionKey);
 }
 
 /**
  * Process an incoming message (real-time or offline).
  *
- * @returns The decrypted {@link Message}, or `null` if decryption fails.
+ * @returns The decrypted {@link DecryptedMessage}, or `null` if decryption fails.
  */
 export async function processIncomingMessage(
     senderId: string,
@@ -391,7 +415,7 @@ export async function processIncomingMessage(
     type: string,
     timestamp: number,
     encryptionKey: CryptoKey,
-): Promise<Message> {
+): Promise<DecryptedMessage> {
     let plaintext: string;
 
     if (type === 'pre_key_signal_message') {
@@ -461,16 +485,8 @@ export async function processIncomingMessage(
         plaintext = openMessage(envelope.ciphertext, sessionKey);
     }
 
-    // Persist the message locally
-    const msg: Message = {
-        id: uuidv4(),
-        contactId: senderId,
-        text: plaintext,
-        direction: 'in',
-        timestamp,
-    };
-    await db.messages.add(msg);
-    return msg;
+    // Persist the message locally (encrypted at rest)
+    return persistMessage(uuidv4(), senderId, plaintext, 'in', timestamp, encryptionKey);
 }
 
 /**
@@ -479,7 +495,7 @@ export async function processIncomingMessage(
  */
 export async function fetchAndProcessOfflineMessages(
     encryptionKey: CryptoKey,
-): Promise<Message[]> {
+): Promise<DecryptedMessage[]> {
     const res = await api.get('/messages/offline');
     const rawMessages: Array<{
         id: string;
@@ -489,7 +505,7 @@ export async function fetchAndProcessOfflineMessages(
         createdAt: string;
     }> = res.data.data ?? [];
 
-    const decrypted: Message[] = [];
+    const decrypted: DecryptedMessage[] = [];
 
     for (const raw of rawMessages) {
         try {
@@ -511,10 +527,20 @@ export async function fetchAndProcessOfflineMessages(
 
 /**
  * Load chat history for a specific contact from the local DB.
+ * Decrypts all message text before returning.
  */
-export async function loadMessages(contactId: string): Promise<Message[]> {
-    return db.messages
+export async function loadMessages(
+    contactId: string,
+    encryptionKey: CryptoKey,
+): Promise<DecryptedMessage[]> {
+    const rows = await db.messages
         .where('contactId')
         .equals(contactId)
         .sortBy('timestamp');
+
+    const result: DecryptedMessage[] = [];
+    for (const row of rows) {
+        result.push(await decryptMessageRow(row, encryptionKey));
+    }
+    return result;
 }

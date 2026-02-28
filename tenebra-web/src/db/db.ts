@@ -66,17 +66,28 @@ export interface Contact {
   username: string;
 }
 
-/** Persisted chat message. */
+/** Persisted chat message — text is always encrypted at rest. */
 export interface Message {
   /** Message UUID (primary key). */
   id: string;
   /** Remote user's UUID (indexed for conversation queries). */
   contactId: string;
-  /** Decrypted plaintext. */
-  text: string;
+  /** AES-GCM encrypted message text (Base64 cipherText). */
+  encryptedText: string;
+  /** AES-GCM IV used to encrypt the text (Base64). */
+  encryptedTextIv: string;
   /** 'in' = received, 'out' = sent. */
   direction: 'in' | 'out';
   /** Unix epoch milliseconds. */
+  timestamp: number;
+}
+
+/** In-memory decrypted message for UI consumption. */
+export interface DecryptedMessage {
+  id: string;
+  contactId: string;
+  text: string;
+  direction: 'in' | 'out';
   timestamp: number;
 }
 
