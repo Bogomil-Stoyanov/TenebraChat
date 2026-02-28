@@ -19,9 +19,9 @@ router.post(
   express.raw({ type: 'application/octet-stream', limit: '50mb' }),
   async (req: Request, res: Response) => {
     try {
-      const body = req.body as Buffer;
-      if (!body || body.length === 0) {
-        const response: ApiResponse = { success: false, error: 'Empty body' };
+      const body = req.body;
+      if (!Buffer.isBuffer(body) || body.length === 0) {
+        const response: ApiResponse = { success: false, error: 'Empty or invalid body' };
         return res.status(400).json(response);
       }
 
