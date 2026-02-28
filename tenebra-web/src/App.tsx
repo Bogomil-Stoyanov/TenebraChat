@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Lock, KeyRound, ShieldCheck, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { db } from './db/db';
 import { deriveKey, decrypt, encrypt, generateSalt } from './services/SecurityService';
+import AuthScreen from './components/AuthScreen';
+import type { AuthResult } from './services/AuthService';
 
-type Screen = 'loading' | 'setup' | 'unlock' | 'unlocked';
+type Screen = 'loading' | 'setup' | 'unlock' | 'auth' | 'authenticated';
 
 const MIN_PASSWORD_LENGTH = 12;
 const MAX_UNLOCK_ATTEMPTS = 10;
@@ -16,6 +18,11 @@ function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+
+  // The derived AES key, kept in memory after unlock for the auth flow
+  const [encryptionKey, setEncryptionKey] = useState<CryptoKey | null>(null);
+  // Info returned after successful authentication
+  const [authResult, setAuthResult] = useState<AuthResult | null>(null);
 
   // Track failed unlock attempts to throttle brute-force
   const failedAttempts = useRef(0);
@@ -62,7 +69,8 @@ function App() {
         { key: 'vault_initialized', value: 'true' },
       ]);
 
-      setScreen('unlocked');
+      setEncryptionKey(key);
+      setScreen('auth');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Setup failed.');
     } finally {
@@ -111,7 +119,8 @@ function App() {
       }
 
       failedAttempts.current = 0;
-      setScreen('unlocked');
+      setEncryptionKey(key);
+      setScreen('auth');
     } catch (err) {
       // AES-GCM throws OperationError for wrong key; anything else is unexpected
       failedAttempts.current++;
@@ -140,13 +149,26 @@ function App() {
     );
   }
 
-  if (screen === 'unlocked') {
+  if (screen === 'auth' && encryptionKey) {
+    return (
+      <AuthScreen
+        encryptionKey={encryptionKey}
+        onAuthenticated={(result) => {
+          setAuthResult(result);
+          setScreen('authenticated');
+        }}
+      />
+    );
+  }
+
+  if (screen === 'authenticated') {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-gray-950">
         <ShieldCheck className="h-16 w-16 text-emerald-400" />
-        <h1 className="text-2xl font-semibold text-gray-100">Vault Unlocked</h1>
+        <h1 className="text-2xl font-semibold text-gray-100">Authenticated</h1>
         <p className="text-sm text-gray-400">
-          Your encrypted database is ready. Next stages will render the chat UI here.
+          Logged in as <span className="font-medium text-gray-200">{authResult?.user.username}</span>.
+          Next stages will render the chat UI here.
         </p>
       </div>
     );
