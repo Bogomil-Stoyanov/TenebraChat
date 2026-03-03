@@ -1,12 +1,31 @@
 version: '3.8'
 
 services:
-  # Tenebra Chat Server
-  app:
+  # ── Tenebra Web (Nginx + SPA) ────────────────────────────────────────────
+  web:
+    build:
+      context: ./tenebra-web
+      dockerfile: Dockerfile
+    container_name: tenebra-web
+    restart: unless-stopped
+    ports:
+      - '80:8080'
+    depends_on:
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:8080']
+      interval: 30s
+      timeout: 10s
+      start_period: 5s
+      retries: 3
+
+  # ── Tenebra Chat Server (API + Socket.io) ────────────────────────────────
+  server:
     build:
       context: ./tenebra-server
       dockerfile: Dockerfile
-    container_name: tenebra-app
+    container_name: tenebra-server
     restart: unless-stopped
     environment:
       NODE_ENV: ${NODE_ENV:-production}
@@ -25,8 +44,8 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       LOW_KEY_THRESHOLD: ${LOW_KEY_THRESHOLD:-20}
-    ports:
-      - '3000:3000'
+    expose:
+      - '3000'
     depends_on:
       postgres:
         condition: service_healthy
@@ -39,6 +58,7 @@ services:
       start_period: 10s
       retries: 3
 
+  # ── PostgreSQL ───────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: tenebra-postgres
@@ -57,6 +77,7 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── MinIO (S3-compatible object storage) ─────────────────────────────────
   minio:
     image: minio/minio:latest
     container_name: tenebra-minio
@@ -76,7 +97,7 @@ services:
       timeout: 20s
       retries: 3
 
-  # Optional: MinIO client to create initial bucket
+  # ── MinIO init (create bucket on first run) ──────────────────────────────
   minio-init:
     image: minio/mc:latest
     container_name: tenebra-minio-init
