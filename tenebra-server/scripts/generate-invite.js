@@ -1,6 +1,5 @@
 const knex = require('knex');
 const crypto = require('crypto');
-const path = require('path');
 
 const config = {
   client: 'pg',
