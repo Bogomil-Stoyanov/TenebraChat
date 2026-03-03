@@ -9,12 +9,12 @@ services:
     container_name: tenebra-web
     restart: unless-stopped
     ports:
-      - '80:80'
+      - '80:8080'
     depends_on:
       server:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:80']
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:8080']
       interval: 30s
       timeout: 10s
       start_period: 5s
