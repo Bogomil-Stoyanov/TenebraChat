@@ -163,12 +163,7 @@ function App() {
   }
 
   if (screen === 'authenticated') {
-    return (
-      <ChatScreen
-        user={authResult!.user}
-        encryptionKey={encryptionKey!}
-      />
-    );
+    return <ChatScreen user={authResult!.user} encryptionKey={encryptionKey!} />;
   }
 
   const isSetup = screen === 'setup';
@@ -261,4 +256,3 @@ function App() {
 }
 
 export default App;
-

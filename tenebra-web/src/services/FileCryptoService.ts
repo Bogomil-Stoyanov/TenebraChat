@@ -20,21 +20,21 @@ const IV_BYTE_LENGTH = 12; // 96-bit IV recommended for AES-GCM
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
 }
 
 function base64ToUint8Array(base64: string): Uint8Array {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes;
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
 // ─── Public API ────────────────────────────────────────────────────────────────
@@ -44,11 +44,11 @@ function base64ToUint8Array(base64: string): Uint8Array {
  * The key is **extractable** so it can be serialised for the wire.
  */
 export async function generateFileKey(): Promise<CryptoKey> {
-    return crypto.subtle.generateKey(
-        { name: AES_ALGORITHM, length: AES_KEY_LENGTH },
-        true, // extractable — we need to export it for the message payload
-        ['encrypt', 'decrypt'],
-    );
+  return crypto.subtle.generateKey(
+    { name: AES_ALGORITHM, length: AES_KEY_LENGTH },
+    true, // extractable — we need to export it for the message payload
+    ['encrypt', 'decrypt']
+  );
 }
 
 /**
@@ -57,72 +57,68 @@ export async function generateFileKey(): Promise<CryptoKey> {
  * @returns The encrypted data as an `ArrayBuffer` and the random IV.
  */
 export async function encryptFile(
-    file: File | Blob,
-    key: CryptoKey,
+  file: File | Blob,
+  key: CryptoKey
 ): Promise<{ encrypted: ArrayBuffer; iv: Uint8Array }> {
-    const iv = crypto.getRandomValues(new Uint8Array(IV_BYTE_LENGTH));
-    const plaintext = await file.arrayBuffer();
+  const iv = crypto.getRandomValues(new Uint8Array(IV_BYTE_LENGTH));
+  const plaintext = await file.arrayBuffer();
 
-    const encrypted = await crypto.subtle.encrypt(
-        { name: AES_ALGORITHM, iv },
-        key,
-        plaintext,
-    );
+  const encrypted = await crypto.subtle.encrypt({ name: AES_ALGORITHM, iv }, key, plaintext);
 
-    return { encrypted, iv };
+  return { encrypted, iv };
 }
 
 /**
  * Decrypt an encrypted blob back to the original file content.
  */
 export async function decryptFile(
-    encryptedBlob: Blob,
-    key: CryptoKey,
-    iv: Uint8Array,
+  encryptedBlob: Blob,
+  key: CryptoKey,
+  iv: Uint8Array
 ): Promise<Blob> {
-    const ciphertext = await encryptedBlob.arrayBuffer();
+  const ciphertext = await encryptedBlob.arrayBuffer();
 
-    const decrypted = await crypto.subtle.decrypt(
-        { name: AES_ALGORITHM, iv: iv as BufferSource },
-        key,
-        ciphertext,
-    );
+  const decrypted = await crypto.subtle.decrypt(
+    { name: AES_ALGORITHM, iv: iv as BufferSource },
+    key,
+    ciphertext
+  );
 
-    return new Blob([decrypted]);
+  return new Blob([decrypted]);
 }
 
 /**
  * Export a CryptoKey to a raw Base64 string for inclusion in a message payload.
  */
 export async function exportKeyToBase64(key: CryptoKey): Promise<string> {
-    const raw = await crypto.subtle.exportKey('raw', key);
-    return arrayBufferToBase64(raw);
+  const raw = await crypto.subtle.exportKey('raw', key);
+  return arrayBufferToBase64(raw);
 }
 
 /**
  * Import a raw Base64 key back into a CryptoKey for decryption.
  */
 export async function importKeyFromBase64(base64: string): Promise<CryptoKey> {
-    const raw = base64ToUint8Array(base64);
-    return crypto.subtle.importKey(
-        'raw',
-        raw as BufferSource,
-        { name: AES_ALGORITHM, length: AES_KEY_LENGTH },
-        false, // non-extractable — only needed for decryption
-        ['decrypt'],
-    );
+  const raw = base64ToUint8Array(base64);
+  return crypto.subtle.importKey(
+    'raw',
+    raw as BufferSource,
+    { name: AES_ALGORITHM, length: AES_KEY_LENGTH },
+    false, // non-extractable — only needed for decryption
+    ['decrypt']
+  );
 }
 
 /**
  * Encode a Uint8Array IV to a Base64 string.
  */
 export function ivToBase64(iv: Uint8Array): string {
-    return arrayBufferToBase64(iv.buffer as ArrayBuffer);
+  return arrayBufferToBase64(iv.buffer as ArrayBuffer);
 }
 
 /**
  * Decode a Base64 string back to a Uint8Array IV.
  */
 export function ivFromBase64(base64: string): Uint8Array {
-    return base64ToUint8Array(base64);
+  return base64ToUint8Array(base64);
 }

@@ -18,10 +18,10 @@ import { getToken } from '@/api/client';
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 export interface IncomingMessagePayload {
-    senderId: string;
-    ciphertext: string;
-    type: string;
-    timestamp: string; // ISO-8601
+  senderId: string;
+  ciphertext: string;
+  type: string;
+  timestamp: string; // ISO-8601
 }
 
 type MessageHandler = (payload: IncomingMessagePayload) => void;
@@ -38,48 +38,48 @@ const messageHandlers: Set<MessageHandler> = new Set();
  * If already connected the existing socket is returned.
  */
 export function connectSocket(): Socket {
-    if (socket?.connected) return socket;
+  if (socket?.connected) return socket;
 
-    // Clean up any existing disconnected/connecting socket to prevent leaks
-    if (socket) {
-        socket.removeAllListeners();
-        socket.disconnect();
-        socket = null;
+  // Clean up any existing disconnected/connecting socket to prevent leaks
+  if (socket) {
+    socket.removeAllListeners();
+    socket.disconnect();
+    socket = null;
+  }
+
+  const token = getToken();
+  if (!token) throw new Error('Cannot connect socket: no JWT token available.');
+
+  socket = io('/', {
+    auth: { token },
+    transports: ['websocket', 'polling'],
+    reconnectionAttempts: 10,
+    reconnectionDelay: 2_000,
+  });
+
+  socket.on('connect', () => {
+    console.log('[Socket] Connected:', socket?.id);
+  });
+
+  socket.on('disconnect', (reason) => {
+    console.log('[Socket] Disconnected:', reason);
+  });
+
+  socket.on('connect_error', (err) => {
+    console.error('[Socket] Connection error:', err.message);
+  });
+
+  socket.on('new_message', (payload: IncomingMessagePayload) => {
+    for (const handler of messageHandlers) {
+      try {
+        handler(payload);
+      } catch (err) {
+        console.error('[Socket] Handler error:', err);
+      }
     }
+  });
 
-    const token = getToken();
-    if (!token) throw new Error('Cannot connect socket: no JWT token available.');
-
-    socket = io('/', {
-        auth: { token },
-        transports: ['websocket', 'polling'],
-        reconnectionAttempts: 10,
-        reconnectionDelay: 2_000,
-    });
-
-    socket.on('connect', () => {
-        console.log('[Socket] Connected:', socket?.id);
-    });
-
-    socket.on('disconnect', (reason) => {
-        console.log('[Socket] Disconnected:', reason);
-    });
-
-    socket.on('connect_error', (err) => {
-        console.error('[Socket] Connection error:', err.message);
-    });
-
-    socket.on('new_message', (payload: IncomingMessagePayload) => {
-        for (const handler of messageHandlers) {
-            try {
-                handler(payload);
-            } catch (err) {
-                console.error('[Socket] Handler error:', err);
-            }
-        }
-    });
-
-    return socket;
+  return socket;
 }
 
 /**
@@ -87,24 +87,24 @@ export function connectSocket(): Socket {
  * Returns an unsubscribe function.
  */
 export function onNewMessage(handler: MessageHandler): () => void {
-    messageHandlers.add(handler);
-    return () => {
-        messageHandlers.delete(handler);
-    };
+  messageHandlers.add(handler);
+  return () => {
+    messageHandlers.delete(handler);
+  };
 }
 
 /**
  * Gracefully disconnect the socket and remove all handlers.
  */
 export function disconnectSocket(): void {
-    if (socket) {
-        socket.disconnect();
-        socket = null;
-    }
-    messageHandlers.clear();
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
+  messageHandlers.clear();
 }
 
 /** Check if the socket is currently connected. */
 export function isConnected(): boolean {
-    return socket?.connected ?? false;
+  return socket?.connected ?? false;
 }
