@@ -1,13 +1,14 @@
 import { Router, Request, Response } from 'express';
-import { User } from '../models';
+import { User, InviteCode } from '../models';
 import { ApiResponse } from '../types';
+import knex from '../database/connection';
 
 const router = Router();
 
 // Register a new user
 router.post('/register', async (req: Request, res: Response) => {
   try {
-    const { username, identity_public_key, registration_id } = req.body;
+    const { username, identity_public_key, registration_id, inviteCode } = req.body;
 
     if (!username || !identity_public_key || registration_id === undefined) {
       const response: ApiResponse = {
@@ -15,6 +16,24 @@ router.post('/register', async (req: Request, res: Response) => {
         error: 'Missing required fields: username, identity_public_key, registration_id',
       };
       return res.status(400).json(response);
+    }
+
+    // Validate invite code
+    if (!inviteCode || typeof inviteCode !== 'string' || inviteCode.trim().length === 0) {
+      const response: ApiResponse = {
+        success: false,
+        error: 'Invalid or expired invite code',
+      };
+      return res.status(403).json(response);
+    }
+
+    const validInvite = await InviteCode.findValidCode(inviteCode.trim());
+    if (!validInvite) {
+      const response: ApiResponse = {
+        success: false,
+        error: 'Invalid or expired invite code',
+      };
+      return res.status(403).json(response);
     }
 
     // Check if username already exists
@@ -27,10 +46,20 @@ router.post('/register', async (req: Request, res: Response) => {
       return res.status(409).json(response);
     }
 
-    const user = await User.query().insertAndFetch({
-      username,
-      identity_public_key,
-      registration_id,
+    // Create user and consume invite code in a transaction
+    const user = await knex.transaction(async (trx) => {
+      const newUser = await User.query(trx).insertAndFetch({
+        username,
+        identity_public_key,
+        registration_id,
+      });
+
+      await InviteCode.query(trx).findById(validInvite.id).patch({
+        is_used: true,
+        used_by: newUser.id,
+      });
+
+      return newUser;
     });
 
     const response: ApiResponse<User> = {

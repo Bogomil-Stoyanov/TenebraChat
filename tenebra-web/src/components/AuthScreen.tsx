@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useState } from 'react';
-import { UserPlus, LogIn, AlertCircle, Loader2 } from 'lucide-react';
+import { UserPlus, LogIn, AlertCircle, Loader2, Ticket } from 'lucide-react';
 import { register, login, type AuthResult } from '@/services/AuthService';
 
 interface AuthScreenProps {
@@ -18,6 +18,7 @@ interface AuthScreenProps {
 
 export default function AuthScreen({ encryptionKey, onAuthenticated }: AuthScreenProps) {
     const [username, setUsername] = useState('');
+    const [inviteCode, setInviteCode] = useState('');
     const [error, setError] = useState('');
     const [busy, setBusy] = useState(false);
 
@@ -39,7 +40,7 @@ export default function AuthScreen({ encryptionKey, onAuthenticated }: AuthScree
             try {
                 const result =
                     action === 'register'
-                        ? await register(trimmed, encryptionKey)
+                        ? await register(trimmed, encryptionKey, inviteCode.trim())
                         : await login(trimmed, encryptionKey);
 
                 onAuthenticated(result);
@@ -62,7 +63,7 @@ export default function AuthScreen({ encryptionKey, onAuthenticated }: AuthScree
                 setBusy(false);
             }
         },
-        [username, encryptionKey, onAuthenticated],
+        [username, inviteCode, encryptionKey, onAuthenticated],
     );
 
     return (
@@ -100,6 +101,22 @@ export default function AuthScreen({ encryptionKey, onAuthenticated }: AuthScree
                         autoFocus
                         disabled={busy}
                     />
+
+                    <label htmlFor="invite-code-input" className="sr-only">
+                        Invite Code
+                    </label>
+                    <div className="relative">
+                        <Ticket className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                        <input
+                            id="invite-code-input"
+                            type="text"
+                            placeholder="Invite Code"
+                            value={inviteCode}
+                            onChange={(e) => setInviteCode(e.target.value)}
+                            className="w-full rounded-lg border border-gray-700 bg-gray-800 py-2.5 pl-10 pr-4 text-sm text-gray-100 placeholder-gray-500 outline-none transition focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                            disabled={busy}
+                        />
+                    </div>
 
                     {/* Error */}
                     {error && (

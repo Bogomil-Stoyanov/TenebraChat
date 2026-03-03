@@ -53,6 +53,7 @@ async function getOrCreateDeviceId(): Promise<string> {
 export async function register(
     username: string,
     encryptionKey: CryptoKey,
+    inviteCode: string,
 ): Promise<AuthResult> {
     // If local keys already exist (e.g. previous registration succeeded but
     // key upload or auto-login failed), try to resume — but only if the
@@ -88,6 +89,7 @@ export async function register(
             username,
             identity_public_key: payload.identityPublicKey,
             registration_id: payload.registrationId,
+            inviteCode,
         });
         userId = registerRes.data.data.id;
     } catch (err: unknown) {
