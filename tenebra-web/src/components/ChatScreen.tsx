@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ArrowLeft,
   MessageSquarePlus,
   Send,
   UserPlus,
@@ -421,14 +422,17 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div
-      className="flex h-screen bg-gray-950 text-gray-100"
+      className="flex h-[100dvh] bg-gray-950 text-gray-100"
       onDragEnter={selectedContact ? handleDragEnter : undefined}
       onDragLeave={selectedContact ? handleDragLeave : undefined}
       onDragOver={selectedContact ? handleDragOver : undefined}
       onDrop={selectedContact ? handleDrop : undefined}
     >
       {/* ─── Sidebar ─────────────────────────────────────────────── */}
-      <aside className="flex w-72 flex-col border-r border-gray-800 bg-gray-900">
+      <aside
+        className={`${selectedContact ? 'hidden md:flex' : 'flex'
+          } w-full md:w-72 flex-col border-r border-gray-800 bg-gray-900`}
+      >
         {/* Sidebar header */}
         <div className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
           <div className="flex items-center gap-2">
@@ -461,9 +465,8 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
             <button
               key={c.userId}
               onClick={() => setSelectedContact(c)}
-              className={`flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-gray-800/60 ${
-                selectedContact?.userId === c.userId ? 'bg-gray-800/80' : ''
-              }`}
+              className={`flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-gray-800/60 ${selectedContact?.userId === c.userId ? 'bg-gray-800/80' : ''
+                }`}
             >
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-sm font-medium text-indigo-300">
                 {c.username.charAt(0).toUpperCase()}
@@ -475,9 +478,21 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
       </aside>
 
       {/* ─── Main panel ──────────────────────────────────────────── */}
-      <main className="relative flex flex-1 flex-col">
+      <main
+        className={`${selectedContact ? 'flex' : 'hidden md:flex'
+          } relative flex-1 flex-col`}
+      >
         {/* Header */}
-        <header className="flex h-14 items-center border-b border-gray-800 px-6">
+        <header className="flex h-14 items-center gap-2 border-b border-gray-800 px-4 md:px-6">
+          {selectedContact && (
+            <button
+              onClick={() => setSelectedContact(null)}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition hover:bg-gray-800 hover:text-gray-200 md:hidden"
+              aria-label="Back to contacts"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+          )}
           {selectedContact ? (
             <h2 className="text-sm font-semibold">{selectedContact.username}</h2>
           ) : (
@@ -496,7 +511,7 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
         )}
 
         {/* Messages area */}
-        <div className="flex flex-1 flex-col overflow-y-auto px-6 py-4">
+        <div className="flex flex-1 flex-col overflow-y-auto px-4 py-4 md:px-6">
           {!selectedContact && (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 text-gray-500">
               <MessageSquarePlus className="h-12 w-12 opacity-30" />
@@ -519,9 +534,8 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
               className={`mb-2 flex ${msg.direction === 'out' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-[70%] rounded-2xl px-4 py-2 text-sm ${
-                  msg.direction === 'out' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-100'
-                }`}
+                className={`max-w-[85%] rounded-2xl px-4 py-2 text-sm md:max-w-[70%] ${msg.direction === 'out' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-100'
+                  }`}
               >
                 {/* Attachment rendering */}
                 {msg.attachment && (
@@ -542,11 +556,10 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
                     ) : (
                       <button
                         onClick={() => handleDownloadAttachment(msg.attachment!)}
-                        className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition ${
-                          msg.direction === 'out'
+                        className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition ${msg.direction === 'out'
                             ? 'bg-indigo-500/30 hover:bg-indigo-500/50'
                             : 'bg-gray-700/50 hover:bg-gray-700/80'
-                        }`}
+                          }`}
                       >
                         <FileIcon className="h-4 w-4 shrink-0" />
                         <span className="truncate">{msg.attachment.name}</span>
@@ -557,9 +570,8 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
                 )}
                 {msg.text && <p className="break-words">{msg.text}</p>}
                 <p
-                  className={`mt-1 text-[10px] ${
-                    msg.direction === 'out' ? 'text-indigo-200/70' : 'text-gray-500'
-                  }`}
+                  className={`mt-1 text-[10px] ${msg.direction === 'out' ? 'text-indigo-200/70' : 'text-gray-500'
+                    }`}
                 >
                   {new Date(msg.timestamp).toLocaleTimeString([], {
                     hour: '2-digit',
@@ -574,7 +586,7 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
 
         {/* Error banner */}
         {error && (
-          <div className="mx-6 mb-2 flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-400">
+          <div className="mx-4 mb-2 flex items-center gap-2 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-400 md:mx-6">
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span className="flex-1">{error}</span>
             <button onClick={() => setError('')} className="text-red-400 hover:text-red-300">
@@ -590,7 +602,7 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
               e.preventDefault();
               handleSend();
             }}
-            className="flex items-center gap-3 border-t border-gray-800 px-6 py-3"
+            className="flex items-center gap-2 border-t border-gray-800 px-3 py-3 md:gap-3 md:px-6"
           >
             {/* Hidden file input */}
             <input
