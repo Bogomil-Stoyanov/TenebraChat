@@ -17,54 +17,52 @@ interface AuthScreenProps {
 }
 
 export default function AuthScreen({ encryptionKey, onAuthenticated }: AuthScreenProps) {
+  const [mode, setMode] = useState<'register' | 'login'>('register');
   const [username, setUsername] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const handleAction = useCallback(
-    async (action: 'register' | 'login') => {
-      setError('');
-      const trimmed = username.trim();
+  const handleSubmit = useCallback(async () => {
+    setError('');
+    const trimmed = username.trim();
 
-      if (!trimmed) {
-        setError('Please enter a username.');
-        return;
-      }
-      if (trimmed.length < 3) {
-        setError('Username must be at least 3 characters.');
-        return;
-      }
+    if (!trimmed) {
+      setError('Please enter a username.');
+      return;
+    }
+    if (trimmed.length < 3) {
+      setError('Username must be at least 3 characters.');
+      return;
+    }
 
-      setBusy(true);
-      try {
-        const result =
-          action === 'register'
-            ? await register(trimmed, encryptionKey, inviteCode.trim())
-            : await login(trimmed, encryptionKey);
+    setBusy(true);
+    try {
+      const result =
+        mode === 'register'
+          ? await register(trimmed, encryptionKey, inviteCode.trim())
+          : await login(trimmed, encryptionKey);
 
-        onAuthenticated(result);
-      } catch (err: unknown) {
-        // Surface the backend error message when available
-        if (
-          typeof err === 'object' &&
-          err !== null &&
-          'response' in err &&
-          typeof (err as Record<string, unknown>).response === 'object'
-        ) {
-          const resp = (err as { response: { data?: { error?: string } } }).response;
-          setError(resp.data?.error ?? 'Request failed.');
-        } else if (err instanceof Error) {
-          setError(err.message);
-        } else {
-          setError('An unexpected error occurred.');
-        }
-      } finally {
-        setBusy(false);
+      onAuthenticated(result);
+    } catch (err: unknown) {
+      // Surface the backend error message when available
+      if (
+        typeof err === 'object' &&
+        err !== null &&
+        'response' in err &&
+        typeof (err as Record<string, unknown>).response === 'object'
+      ) {
+        const resp = (err as { response: { data?: { error?: string } } }).response;
+        setError(resp.data?.error ?? 'Request failed.');
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('An unexpected error occurred.');
       }
-    },
-    [username, inviteCode, encryptionKey, onAuthenticated]
-  );
+    } finally {
+      setBusy(false);
+    }
+  }, [mode, username, inviteCode, encryptionKey, onAuthenticated]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-950 p-4">
@@ -72,11 +70,19 @@ export default function AuthScreen({ encryptionKey, onAuthenticated }: AuthScree
         {/* Header */}
         <div className="mb-6 flex flex-col items-center gap-3">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-indigo-500/10">
-            <UserPlus className="h-7 w-7 text-indigo-400" />
+            {mode === 'register' ? (
+              <UserPlus className="h-7 w-7 text-indigo-400" />
+            ) : (
+              <LogIn className="h-7 w-7 text-indigo-400" />
+            )}
           </div>
-          <h1 className="text-xl font-bold text-gray-100">Tenebra Identity</h1>
+          <h1 className="text-xl font-bold text-gray-100">
+            {mode === 'register' ? 'Create Account' : 'Welcome Back'}
+          </h1>
           <p className="text-center text-sm text-gray-400">
-            Register a new account or log in with your existing identity.
+            {mode === 'register'
+              ? 'Register a new account with an invite code.'
+              : 'Log in with your existing identity.'}
           </p>
         </div>
 
@@ -84,7 +90,7 @@ export default function AuthScreen({ encryptionKey, onAuthenticated }: AuthScree
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            handleAction('register');
+            handleSubmit();
           }}
           className="flex flex-col gap-4"
         >
@@ -102,21 +108,25 @@ export default function AuthScreen({ encryptionKey, onAuthenticated }: AuthScree
             disabled={busy}
           />
 
-          <label htmlFor="invite-code-input" className="sr-only">
-            Invite Code
-          </label>
-          <div className="relative">
-            <Ticket className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
-            <input
-              id="invite-code-input"
-              type="text"
-              placeholder="Invite Code"
-              value={inviteCode}
-              onChange={(e) => setInviteCode(e.target.value)}
-              className="w-full rounded-lg border border-gray-700 bg-gray-800 py-2.5 pl-10 pr-4 text-sm text-gray-100 placeholder-gray-500 outline-none transition focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-              disabled={busy}
-            />
-          </div>
+          {mode === 'register' && (
+            <>
+              <label htmlFor="invite-code-input" className="sr-only">
+                Invite Code
+              </label>
+              <div className="relative">
+                <Ticket className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                <input
+                  id="invite-code-input"
+                  type="text"
+                  placeholder="Invite Code"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  className="w-full rounded-lg border border-gray-700 bg-gray-800 py-2.5 pl-10 pr-4 text-sm text-gray-100 placeholder-gray-500 outline-none transition focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                  disabled={busy}
+                />
+              </div>
+            </>
+          )}
 
           {/* Error */}
           {error && (
@@ -126,31 +136,37 @@ export default function AuthScreen({ encryptionKey, onAuthenticated }: AuthScree
             </div>
           )}
 
-          {/* Action buttons */}
-          <div className="mt-1 flex gap-3">
-            <button
-              type="submit"
-              disabled={busy}
-              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {busy ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <UserPlus className="h-4 w-4" />
-              )}
-              Register
-            </button>
+          {/* Submit button */}
+          <button
+            type="submit"
+            disabled={busy}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {busy ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : mode === 'register' ? (
+              <UserPlus className="h-4 w-4" />
+            ) : (
+              <LogIn className="h-4 w-4" />
+            )}
+            {mode === 'register' ? 'Register' : 'Login'}
+          </button>
 
+          {/* Toggle mode */}
+          <p className="text-center text-sm text-gray-500">
+            {mode === 'register' ? 'Already have an account?' : "Don't have an account?"}{' '}
             <button
               type="button"
               disabled={busy}
-              onClick={() => handleAction('login')}
-              className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-gray-700 bg-gray-800 py-2.5 text-sm font-medium text-gray-100 transition hover:border-gray-600 hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => {
+                setMode(mode === 'register' ? 'login' : 'register');
+                setError('');
+              }}
+              className="font-medium text-indigo-400 hover:text-indigo-300 disabled:opacity-50"
             >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
-              Login
+              {mode === 'register' ? 'Login' : 'Register'}
             </button>
-          </div>
+          </p>
         </form>
       </div>
     </div>
