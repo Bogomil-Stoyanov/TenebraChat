@@ -99,11 +99,7 @@ export async function encrypt(
 /**
  * Decrypt a Base64-encoded AES-GCM cipherText back to the original UTF-8 string.
  */
-export async function decrypt(
-  cipherText: string,
-  iv: string,
-  key: CryptoKey
-): Promise<string> {
+export async function decrypt(cipherText: string, iv: string, key: CryptoKey): Promise<string> {
   const decrypted = await crypto.subtle.decrypt(
     { name: AES_ALGORITHM, iv: base64ToArrayBuffer(iv) },
     key,

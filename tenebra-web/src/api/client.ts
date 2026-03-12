@@ -9,9 +9,9 @@
 import axios from 'axios';
 
 const api = axios.create({
-    baseURL: '/api',
-    headers: { 'Content-Type': 'application/json' },
-    timeout: 15_000,
+  baseURL: '/api',
+  headers: { 'Content-Type': 'application/json' },
+  timeout: 15_000,
 });
 
 // ─── Token management ──────────────────────────────────────────────────────────
@@ -26,27 +26,27 @@ let authToken: string | null = null;
  * require re-authentication, which is the desired security trade-off.
  */
 export function setToken(token: string): void {
-    authToken = token;
+  authToken = token;
 }
 
 /** Clear the stored JWT (logout). */
 export function clearToken(): void {
-    authToken = null;
+  authToken = null;
 }
 
 /** Return the current in-memory JWT. */
 export function getToken(): string | null {
-    return authToken;
+  return authToken;
 }
 
 // ─── Request interceptor ───────────────────────────────────────────────────────
 
 api.interceptors.request.use((config) => {
-    const token = getToken();
-    if (token && config.headers) {
-        config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
+  const token = getToken();
+  if (token && config.headers) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
 });
 
 export default api;

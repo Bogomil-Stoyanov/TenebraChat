@@ -15,8 +15,8 @@ import api from '@/api/client';
 // ─── Public API ────────────────────────────────────────────────────────────────
 
 export interface UploadResult {
-    /** MinIO object name (used as the file identifier). */
-    objectName: string;
+  /** MinIO object name (used as the file identifier). */
+  objectName: string;
 }
 
 /**
@@ -26,20 +26,20 @@ export interface UploadResult {
  * 2. The backend stores it in MinIO and returns the `object_name`.
  */
 export async function uploadEncryptedFile(
-    encryptedBlob: Blob,
-    filename = 'encrypted.bin',
+  encryptedBlob: Blob,
+  filename = 'encrypted.bin'
 ): Promise<UploadResult> {
-    const res = await api.post('/files/upload', encryptedBlob, {
-        headers: {
-            'Content-Type': 'application/octet-stream',
-            'X-Filename': filename,
-        },
-        // Prevent Axios from JSON-encoding the blob
-        transformRequest: [(data: Blob) => data],
-    });
+  const res = await api.post('/files/upload', encryptedBlob, {
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      'X-Filename': filename,
+    },
+    // Prevent Axios from JSON-encoding the blob
+    transformRequest: [(data: Blob) => data],
+  });
 
-    const { object_name } = res.data.data as { object_name: string };
-    return { objectName: object_name };
+  const { object_name } = res.data.data as { object_name: string };
+  return { objectName: object_name };
 }
 
 /**
@@ -48,8 +48,8 @@ export async function uploadEncryptedFile(
  * @param objectName The MinIO object name returned by {@link uploadEncryptedFile}.
  */
 export async function downloadEncryptedFile(objectName: string): Promise<Blob> {
-    const res = await api.get(`/files/download/${encodeURIComponent(objectName)}`, {
-        responseType: 'blob',
-    });
-    return res.data as Blob;
+  const res = await api.get(`/files/download/${encodeURIComponent(objectName)}`, {
+    responseType: 'blob',
+  });
+  return res.data as Blob;
 }

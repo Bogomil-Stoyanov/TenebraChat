@@ -5,3 +5,4 @@ export { OneTimePreKey } from './OneTimePreKey';
 export { QueuedMessage } from './QueuedMessage';
 export { Device } from './Device';
 export { AuthChallenge } from './AuthChallenge';
+export { InviteCode } from './InviteCode';
