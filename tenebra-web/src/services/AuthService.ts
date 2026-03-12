@@ -111,6 +111,7 @@ export async function register(
   }
 
   // Store the user ID and username locally for future reference
+  await clearUserDataIfSwitched(userId);
   await db.meta.bulkPut([
     { key: 'user_id', value: userId },
     { key: 'username', value: username },
@@ -226,6 +227,25 @@ async function cleanupLocalIdentity(): Promise<void> {
   }
 }
 
+/**
+ * If a different user is logging in on this device, clear all
+ * user-specific data (contacts, messages, sessions) so the new
+ * user doesn't see the previous account's conversations.
+ */
+async function clearUserDataIfSwitched(newUserId: string): Promise<void> {
+  try {
+    const existing = await db.meta.get('user_id');
+    if (existing && existing.value !== newUserId) {
+      console.info('[AUTH] Account switch detected — clearing previous user data.');
+      await db.contacts.clear();
+      await db.messages.clear();
+      await db.sessions.clear();
+    }
+  } catch (err) {
+    console.warn('[AUTH] Failed to clear previous user data.', err);
+  }
+}
+
 async function loginWithKeys(
   username: string,
   deviceId: string,
@@ -269,6 +289,7 @@ async function loginWithKeys(
 
   // 6. Store JWT and user metadata
   setToken(token);
+  await clearUserDataIfSwitched(user.id);
   await db.meta.bulkPut([
     { key: 'user_id', value: user.id },
     { key: 'username', value: user.username },
