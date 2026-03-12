@@ -3,6 +3,7 @@ import { createServer } from 'http';
 import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import webpush from 'web-push';
 import { config } from './config';
 import { minioService } from './services/MinioService';
 import './database/connection';
@@ -11,12 +12,28 @@ import keyRoutes from './routes/keys';
 import messageRoutes from './routes/messages';
 import fileRoutes from './routes/files';
 import authRoutes from './routes/auth';
+import pushRoutes from './routes/push';
 import { authenticate } from './middleware/auth';
 import { initSocket } from './socket';
 import { cleanupService } from './services/CleanupService';
 
+// ── Web Push (VAPID) initialisation ───────────────────────────────────────────
+if (config.vapid.publicKey && config.vapid.privateKey) {
+  webpush.setVapidDetails(
+    config.vapid.subject,
+    config.vapid.publicKey,
+    config.vapid.privateKey
+  );
+  console.log('✅ Web Push (VAPID) initialised');
+} else {
+  console.warn('⚠️  VAPID keys not set — push notifications disabled');
+}
+
 const app: Application = express();
 const httpServer = createServer(app);
+
+// Trust first proxy (nginx) — required for express-rate-limit behind reverse proxy
+app.set('trust proxy', 1);
 
 // Rate limiter for authenticated API routes
 const apiLimiter = rateLimit({
@@ -72,6 +89,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/keys', apiLimiter, authenticate, keyRoutes);
 app.use('/api/messages', apiLimiter, authenticate, messageRoutes);
 app.use('/api/files', fileLimiter, authenticate, fileRoutes);
+app.use('/api/push', apiLimiter, authenticate, pushRoutes);
 
 app.use((req: Request, res: Response) => {
   res.status(404).json({

@@ -17,7 +17,7 @@ interface AuthScreenProps {
 }
 
 export default function AuthScreen({ encryptionKey, onAuthenticated }: AuthScreenProps) {
-  const [mode, setMode] = useState<'register' | 'login'>('register');
+  const [mode, setMode] = useState<'register' | 'login'>('login');
   const [username, setUsername] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [error, setError] = useState('');

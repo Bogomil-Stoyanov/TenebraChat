@@ -56,6 +56,7 @@ import {
   isConnected,
 } from '@/services/SocketService';
 import type { IncomingMessagePayload } from '@/services/SocketService';
+import { registerForPushNotifications } from '@/services/PushService';
 
 // ─── Props ─────────────────────────────────────────────────────────────────────
 
@@ -197,6 +198,11 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
   }, [handleIncoming]);
 
   // ── Fetch offline messages on mount ──────────────────────────────────────
+  useEffect(() => {
+    // Register for push notifications (non-blocking, best-effort)
+    registerForPushNotifications();
+  }, []);
+
   useEffect(() => {
     (async () => {
       try {
@@ -557,8 +563,8 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
                       <button
                         onClick={() => handleDownloadAttachment(msg.attachment!)}
                         className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition ${msg.direction === 'out'
-                            ? 'bg-indigo-500/30 hover:bg-indigo-500/50'
-                            : 'bg-gray-700/50 hover:bg-gray-700/80'
+                          ? 'bg-indigo-500/30 hover:bg-indigo-500/50'
+                          : 'bg-gray-700/50 hover:bg-gray-700/80'
                           }`}
                       >
                         <FileIcon className="h-4 w-4 shrink-0" />

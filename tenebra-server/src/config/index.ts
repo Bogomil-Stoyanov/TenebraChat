@@ -28,6 +28,11 @@ export const config = {
   },
   /** Threshold below which clients are told to upload more one-time pre-keys. */
   lowKeyThreshold: parseInt(process.env.LOW_KEY_THRESHOLD || '20', 10),
+  vapid: {
+    publicKey: process.env.VAPID_PUBLIC_KEY || '',
+    privateKey: process.env.VAPID_PRIVATE_KEY || '',
+    subject: process.env.VAPID_SUBJECT || 'mailto:admin@localhost',
+  },
 };
 
 // --- Startup validations ---
@@ -43,6 +48,6 @@ const VALID_JWT_EXPIRES_IN = /^\d+[smhd]$/;
 if (!VALID_JWT_EXPIRES_IN.test(config.jwt.expiresIn)) {
   throw new Error(
     `Invalid JWT_EXPIRES_IN value "${config.jwt.expiresIn}". ` +
-      'Expected a value like "7d", "24h", "3600s", or "30m".'
+    'Expected a value like "7d", "24h", "3600s", or "30m".'
   );
 }

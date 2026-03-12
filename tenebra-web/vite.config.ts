@@ -32,6 +32,9 @@ export default defineConfig({
     suppressProxyEpipe(),
     VitePWA({
       registerType: 'autoUpdate',
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       manifest: {
         name: 'Tenebra Secure Messenger',
         short_name: 'Tenebra',
