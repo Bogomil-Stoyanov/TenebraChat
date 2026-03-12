@@ -15,6 +15,15 @@ const registerLimiter = rateLimit({
   message: { success: false, error: 'Too many registration attempts, please try again later.' },
 });
 
+// Rate limiter for user lookups: 30 per minute per IP
+const userLookupLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests, please try again later.' },
+});
+
 // Register a new user
 router.post('/register', registerLimiter, async (req: Request, res: Response) => {
   try {
@@ -106,7 +115,7 @@ router.post('/register', registerLimiter, async (req: Request, res: Response) =>
 });
 
 // Get user by username
-router.get('/by-username/:username', async (req: Request, res: Response) => {
+router.get('/by-username/:username', userLookupLimiter, async (req: Request, res: Response) => {
   try {
     const { username } = req.params;
     const user = await User.findByUsername(username);
@@ -135,7 +144,7 @@ router.get('/by-username/:username', async (req: Request, res: Response) => {
 });
 
 // Get user by ID
-router.get('/:id', async (req: Request, res: Response) => {
+router.get('/:id', userLookupLimiter, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const user = await User.query().findById(id);
