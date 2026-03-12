@@ -436,8 +436,9 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
     >
       {/* ─── Sidebar ─────────────────────────────────────────────── */}
       <aside
-        className={`${selectedContact ? 'hidden md:flex' : 'flex'
-          } w-full md:w-72 flex-col border-r border-gray-800 bg-gray-900`}
+        className={`${
+          selectedContact ? 'hidden md:flex' : 'flex'
+        } w-full md:w-72 flex-col border-r border-gray-800 bg-gray-900`}
       >
         {/* Sidebar header */}
         <div className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
@@ -471,8 +472,9 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
             <button
               key={c.userId}
               onClick={() => setSelectedContact(c)}
-              className={`flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-gray-800/60 ${selectedContact?.userId === c.userId ? 'bg-gray-800/80' : ''
-                }`}
+              className={`flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-gray-800/60 ${
+                selectedContact?.userId === c.userId ? 'bg-gray-800/80' : ''
+              }`}
             >
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-sm font-medium text-indigo-300">
                 {c.username.charAt(0).toUpperCase()}
@@ -484,10 +486,7 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
       </aside>
 
       {/* ─── Main panel ──────────────────────────────────────────── */}
-      <main
-        className={`${selectedContact ? 'flex' : 'hidden md:flex'
-          } relative flex-1 flex-col`}
-      >
+      <main className={`${selectedContact ? 'flex' : 'hidden md:flex'} relative flex-1 flex-col`}>
         {/* Header */}
         <header className="flex h-14 items-center gap-2 border-b border-gray-800 px-4 md:px-6">
           {selectedContact && (
@@ -540,8 +539,9 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
               className={`mb-2 flex ${msg.direction === 'out' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-[85%] rounded-2xl px-4 py-2 text-sm md:max-w-[70%] ${msg.direction === 'out' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-100'
-                  }`}
+                className={`max-w-[85%] rounded-2xl px-4 py-2 text-sm md:max-w-[70%] ${
+                  msg.direction === 'out' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-100'
+                }`}
               >
                 {/* Attachment rendering */}
                 {msg.attachment && (
@@ -562,10 +562,11 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
                     ) : (
                       <button
                         onClick={() => handleDownloadAttachment(msg.attachment!)}
-                        className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition ${msg.direction === 'out'
-                          ? 'bg-indigo-500/30 hover:bg-indigo-500/50'
-                          : 'bg-gray-700/50 hover:bg-gray-700/80'
-                          }`}
+                        className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs transition ${
+                          msg.direction === 'out'
+                            ? 'bg-indigo-500/30 hover:bg-indigo-500/50'
+                            : 'bg-gray-700/50 hover:bg-gray-700/80'
+                        }`}
                       >
                         <FileIcon className="h-4 w-4 shrink-0" />
                         <span className="truncate">{msg.attachment.name}</span>
@@ -576,8 +577,9 @@ export default function ChatScreen({ user, encryptionKey }: ChatScreenProps) {
                 )}
                 {msg.text && <p className="break-words">{msg.text}</p>}
                 <p
-                  className={`mt-1 text-[10px] ${msg.direction === 'out' ? 'text-indigo-200/70' : 'text-gray-500'
-                    }`}
+                  className={`mt-1 text-[10px] ${
+                    msg.direction === 'out' ? 'text-indigo-200/70' : 'text-gray-500'
+                  }`}
                 >
                   {new Date(msg.timestamp).toLocaleTimeString([], {
                     hour: '2-digit',

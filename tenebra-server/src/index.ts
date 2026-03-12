@@ -19,11 +19,7 @@ import { cleanupService } from './services/CleanupService';
 
 // ── Web Push (VAPID) initialisation ───────────────────────────────────────────
 if (config.vapid.publicKey && config.vapid.privateKey) {
-  webpush.setVapidDetails(
-    config.vapid.subject,
-    config.vapid.publicKey,
-    config.vapid.privateKey
-  );
+  webpush.setVapidDetails(config.vapid.subject, config.vapid.publicKey, config.vapid.privateKey);
   console.log('✅ Web Push (VAPID) initialised');
 } else {
   console.warn('⚠️  VAPID keys not set — push notifications disabled');

@@ -48,6 +48,6 @@ const VALID_JWT_EXPIRES_IN = /^\d+[smhd]$/;
 if (!VALID_JWT_EXPIRES_IN.test(config.jwt.expiresIn)) {
   throw new Error(
     `Invalid JWT_EXPIRES_IN value "${config.jwt.expiresIn}". ` +
-    'Expected a value like "7d", "24h", "3600s", or "30m".'
+      'Expected a value like "7d", "24h", "3600s", or "30m".'
   );
 }

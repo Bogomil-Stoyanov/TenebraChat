@@ -81,7 +81,9 @@ function validateSendInput(body: Record<string, unknown>): SendMessageInput | st
  * push subscription.  Intentionally sends no message content — this is a
  * zero-knowledge wake signal only.
  */
-async function sendPushPing(devices: Awaited<ReturnType<typeof Device.findByUserId>>): Promise<void> {
+async function sendPushPing(
+  devices: Awaited<ReturnType<typeof Device.findByUserId>>
+): Promise<void> {
   if (!config.vapid.publicKey || !config.vapid.privateKey) return;
   for (const device of devices) {
     if (!device.push_subscription) continue;
@@ -94,9 +96,14 @@ async function sendPushPing(devices: Awaited<ReturnType<typeof Device.findByUser
     } catch (pushErr: any) {
       const status = pushErr?.statusCode ?? pushErr?.status;
       if (status === 410 || status === 404) {
-        Device.clearPushSubscription(device.id).catch(() => { });
+        Device.clearPushSubscription(device.id).catch(() => {});
       }
-      console.warn('[Push] Failed to send notification to device', device.id, ':', pushErr?.message ?? pushErr);
+      console.warn(
+        '[Push] Failed to send notification to device',
+        device.id,
+        ':',
+        pushErr?.message ?? pushErr
+      );
     }
   }
 }
@@ -187,7 +194,7 @@ export async function sendMessage(req: AuthenticatedRequest, res: Response): Pro
       // Still send a push ping so the user gets a notification even if
       // Chrome is backgrounded/minimised and the WebSocket is technically
       // still open (OS hasn't closed it yet).
-      sendPushPing(recipientDevices).catch(() => { });
+      sendPushPing(recipientDevices).catch(() => {});
 
       const response: ApiResponse<{ delivered: boolean }> = {
         success: true,
