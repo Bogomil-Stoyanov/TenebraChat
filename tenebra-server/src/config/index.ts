@@ -28,6 +28,11 @@ export const config = {
   },
   /** Threshold below which clients are told to upload more one-time pre-keys. */
   lowKeyThreshold: parseInt(process.env.LOW_KEY_THRESHOLD || '20', 10),
+  vapid: {
+    publicKey: process.env.VAPID_PUBLIC_KEY || '',
+    privateKey: process.env.VAPID_PRIVATE_KEY || '',
+    subject: process.env.VAPID_SUBJECT || 'mailto:admin@localhost',
+  },
 };
 
 // --- Startup validations ---

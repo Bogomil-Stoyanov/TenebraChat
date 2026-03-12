@@ -11,6 +11,7 @@ export class Device extends BaseModel {
   registration_id!: number;
   device_name?: string;
   fcm_token?: string | null;
+  push_subscription?: string | null;
   last_seen_at!: Date;
   declare created_at: Date;
 
@@ -91,5 +92,16 @@ export class Device extends BaseModel {
     const device = await this.findByUserIdAndDeviceId(userId, deviceId);
     if (!device) return undefined;
     return this.query().patchAndFetchById(device.id, { fcm_token: fcmToken });
+  }
+
+  static async updatePushSubscription(
+    deviceId: string,
+    subscription: string | null
+  ): Promise<number> {
+    return this.query().findById(deviceId).patch({ push_subscription: subscription });
+  }
+
+  static async clearPushSubscription(deviceId: string): Promise<number> {
+    return this.updatePushSubscription(deviceId, null);
   }
 }

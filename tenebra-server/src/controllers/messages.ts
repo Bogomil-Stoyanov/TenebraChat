@@ -1,7 +1,9 @@
 import { Response } from 'express';
 import { createHash } from 'crypto';
+import webpush from 'web-push';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { QueuedMessage, Device } from '../models';
+import { config } from '../config';
 import { ApiResponse } from '../types';
 import { getIO } from '../socket';
 import knex from '../database/connection';
@@ -68,6 +70,42 @@ function validateSendInput(body: Record<string, unknown>): SendMessageInput | st
     ciphertext,
     type: messageType,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Fire-and-forget push ping to all of a user's devices that have a
+ * push subscription.  Intentionally sends no message content — this is a
+ * zero-knowledge wake signal only.
+ */
+async function sendPushPing(
+  devices: Awaited<ReturnType<typeof Device.findByUserId>>
+): Promise<void> {
+  if (!config.vapid.publicKey || !config.vapid.privateKey) return;
+  for (const device of devices) {
+    if (!device.push_subscription) continue;
+    try {
+      const sub = JSON.parse(device.push_subscription);
+      await webpush.sendNotification(sub, JSON.stringify({ type: 'PING' }), {
+        urgency: 'high',
+        TTL: 60,
+      });
+    } catch (pushErr: any) {
+      const status = pushErr?.statusCode ?? pushErr?.status;
+      if (status === 410 || status === 404) {
+        Device.clearPushSubscription(device.id).catch(() => {});
+      }
+      console.warn(
+        '[Push] Failed to send notification to device',
+        device.id,
+        ':',
+        pushErr?.message ?? pushErr
+      );
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -153,6 +191,11 @@ export async function sendMessage(req: AuthenticatedRequest, res: Response): Pro
         timestamp: new Date().toISOString(),
       });
 
+      // Still send a push ping so the user gets a notification even if
+      // Chrome is backgrounded/minimised and the WebSocket is technically
+      // still open (OS hasn't closed it yet).
+      sendPushPing(recipientDevices).catch(() => {});
+
       const response: ApiResponse<{ delivered: boolean }> = {
         success: true,
         data: { delivered: true },
@@ -169,6 +212,9 @@ export async function sendMessage(req: AuthenticatedRequest, res: Response): Pro
         encrypted_payload: payloadBuffer,
         message_type: type,
       });
+
+      // ── Zero-knowledge push ping ───────────────────────────────────────
+      await sendPushPing(recipientDevices);
 
       const response: ApiResponse<{ delivered: boolean; messageId: string }> = {
         success: true,
